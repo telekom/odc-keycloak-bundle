@@ -1,0 +1,18 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: User
+metadata:
+  name: jane-doe
+  namespace: keycloak-dev  # Must match the Keycloak instance namespace
+spec:
+  realmRef: tenant-a
+  username: jane.doe
+  email: jane.doe@example.com
+  firstName: Jane
+  lastName: Doe
+  enabled: true
+  emailVerified: false
+  groups:
+    - developers
+  initialPassword:
+    secretName: jane-doe-initial-password  # kubectl create secret generic jane-doe-initial-password --from-literal=password=changeme
+    secretKey: password

@@ -1,0 +1,7 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: Realm
+metadata:
+  name: master
+spec:
+  realmName: master
+  enabled: true

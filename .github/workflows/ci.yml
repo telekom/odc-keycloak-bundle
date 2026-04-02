@@ -1,0 +1,735 @@
+# ==============================================================================
+# ci.yml - Keycloak OCM CI/CD Pipeline
+# ==============================================================================
+#
+# Pipeline Flow:
+#   1. Quality Checks
+#      - YAML Lint (manifests/, kro/, component-constructor.yaml, charts/, examples/, scripts/tests/fixtures/)
+#      - ShellCheck (scripts/**/*.sh)
+#      - Gitleaks (Secrets Detection)
+#
+#   2. Build Operator Image
+#      - go vet ./... (operator/)
+#      - docker build & push to GHCR
+#        Tags: sha-<short> always; latest on main branch
+#
+#   3. Build OCM
+#      - Create component archive (scripts/ocm/ocm-create.sh)
+#      - Sign & Validate archive (scripts/ocm/ocm-sign.sh, scripts/ocm/ocm-validate.sh)
+#
+#   Jobs 2 and 3 run in parallel after job 1.
+#
+#   4. Transfer (if enabled)
+#      - Push component to OCI registry (scripts/ocm/ocm-transfer.sh)
+#
+#   5. Deploy & Verify (if enabled)
+#      - Deploy Keycloak to K8s (scripts/deploy/deploy-all.sh)
+#        Includes: CloudNativePG, Prometheus Operator, Jaeger all-in-one,
+#                  monitoring manifests (ServiceMonitor, PodMonitor, PrometheusRule)
+#      - Verify Pod Readiness & HTTP Health Check
+#      - Smoke Test (scripts/utils/status.sh)
+#      - Backup & Restore Verify (scripts/tests/test-backup-restore.sh --live)
+#      - Leader Election HA Verification (Lease object + pod count)
+#      - Capability Verify — CRD Smoke + Deletion Lifecycle suites (scripts/tests/test-crd-*.sh)
+#      - Observability Verify (scripts/tests/test-observability.sh)
+#        - ServiceMonitor presence + Keycloak /metrics endpoint
+#        - PodMonitor presence + CNPG /metrics endpoint
+#        - OTEL tracing: enable KC_TRACING_ENABLED, generate login, assert spans in Jaeger
+#        - PrometheusRule: assert all expected alert names are defined
+#        - Prometheus rule evaluation: scale Keycloak to 0, assert KeycloakDown enters
+#          pending/firing state via Prometheus alerts API, restore replicas
+#
+# All deployment logic lives in scripts/ - this workflow orchestrates the process.
+# ==============================================================================
+
+name: OCM Build & Deploy
+
+on:
+  push:
+    branches: [main, "delivery/**", "feature/**", "fix/**", "feat/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      checkout_ref:
+        description: "Optional ref/sha to checkout (e.g. refs/pull/123/merge)"
+        type: string
+        default: ""
+      run_lint:
+        description: "Run Lint & Security Scan"
+        type: boolean
+        default: true
+      run_build:
+        description: "Run Build & Validate"
+        type: boolean
+        default: true
+      run_transfer:
+        description: "Run Transfer to Registry"
+        type: boolean
+        default: true
+      run_deploy:
+        description: "Run Deploy & Smoke Test"
+        type: boolean
+        default: true
+      run_backup_restore_verify:
+        description: "Run CNPG backup/restore live verification"
+        type: boolean
+        default: true
+      backup_provider:
+        description: "Backup provider for live verification"
+        type: choice
+        default: incluster-minio
+        options:
+          - external-s3
+          - incluster-minio
+      run_observability_verify:
+        description: "Run Observability Verification (ServiceMonitor, PodMonitor, OTEL, AlertRules)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  INSTANCE_NAME: "cicd"
+  NAMESPACE: "keycloak-cicd"
+  OPERATOR_IMAGE: "ghcr.io/${{ github.repository_owner }}/keycloak-operator"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # renovate: datasource=github-releases depName=open-component-model/ocm
+  OCM_CLI_VERSION: "v0.38.0"
+  # renovate: datasource=golang-version depName=go
+  GO_VERSION: "1.25.8"
+  # renovate: datasource=github-releases depName=gitleaks/gitleaks
+  GITLEAKS_VERSION: "8.30.0"
+  GITLEAKS_LINUX_X64_SHA256: "79a3ab579b53f71efd634f3aaf7e04a0fa0cf206b7ed434638d1547a2470a66e"
+  # renovate: datasource=github-releases depName=anchore/syft
+  SYFT_VERSION: "1.42.3"
+  SYFT_LINUX_AMD64_SHA256: "0d6be741479eddd2c8644a288990c04f3df0d609bbc1599a005532a9dff63509"
+
+jobs:
+  # ── 0. PR Privileged Verify Gate ───────────────────────────────────
+  pr-privileged-verify-gate:
+    name: "0. PR Privileged Verify Gate"
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - name: Require privileged verification label
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          echo "### Privileged Verification Required" >> "$GITHUB_STEP_SUMMARY"
+          echo "- privileged jobs are disabled on pull_request by policy" >> "$GITHUB_STEP_SUMMARY"
+          echo "- run this workflow manually with checkout_ref=refs/pull/${PR_NUMBER}/merge" >> "$GITHUB_STEP_SUMMARY"
+          echo "- after a green privileged run, add label 'privileged-verified'" >> "$GITHUB_STEP_SUMMARY"
+
+          if echo ",$LABELS," | grep -q ",privileged-verified,"; then
+            echo "- status: gate passed (label present)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::Missing required label 'privileged-verified'."
+            exit 1
+          fi
+
+  # ── 1. Quality Checks ───────────────────────────────────────────────
+  lint:
+    name: "1. Quality Checks"
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_lint }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # Scan full history for Gitleaks
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.checkout_ref || github.ref }}
+
+      - name: YAML Lint
+        id: yaml_lint
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          file_or_dir: |
+            manifests/
+            kro/
+            component-constructor.yaml
+            charts/keycloak-operator/Chart.yaml
+            charts/keycloak-operator/values.yaml
+            examples/
+            scripts/tests/fixtures/
+          config_data: |
+            extends: default
+            rules:
+              line-length:
+                max: 150
+              truthy:
+                check-keys: false
+              document-start: disable
+              comments-indentation: disable
+          strict: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/delivery/') }}
+          no_warnings: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/delivery/') }}
+
+      - name: ShellCheck
+        id: shellcheck
+        run: |
+          sudo apt-get -qq install -y shellcheck > /dev/null 2>&1
+          shopt -s globstar
+          echo "Scanning the following scripts:"
+          ls -1 scripts/**/*.sh
+          shellcheck -S warning scripts/**/*.sh
+
+      - name: Gitleaks (Secrets Scan)
+        id: gitleaks
+        run: |
+          GITLEAKS_TARBALL="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${GITLEAKS_TARBALL}" -o "/tmp/${GITLEAKS_TARBALL}"
+          echo "${GITLEAKS_LINUX_X64_SHA256}  /tmp/${GITLEAKS_TARBALL}" | sha256sum -c -
+          tar xzf "/tmp/${GITLEAKS_TARBALL}" -C /tmp gitleaks
+
+          /tmp/gitleaks git . --redact -v
+
+      - name: Non-root Security Check
+        id: security_check
+        run: |
+          chmod +x scripts/tests/test-security.sh
+          ./scripts/tests/test-security.sh
+
+      - name: Add Job Summary
+        if: always()
+        run: |
+          echo "### 🧪 Quality Checks Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| YAML Lint | ${{ steps.yaml_lint.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ShellCheck | ${{ steps.shellcheck.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Gitleaks | ${{ steps.gitleaks.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Non-root Security Check | ${{ steps.security_check.outcome }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ── 2. Build Operator Image ──────────────────────────────────────────
+  build-operator:
+    name: "2. Build Operator Image"
+    runs-on: ubuntu-latest
+    needs: lint
+    if: ${{ (always() && (needs.lint.result == 'success' || needs.lint.result == 'skipped')) && (github.event_name != 'workflow_dispatch' || inputs.run_build) }}
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.checkout_ref || github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: operator/go.sum
+
+      - name: Go Vet
+        working-directory: operator
+        run: go vet ./...
+
+      - name: Verify CRD Manifests
+        run: |
+          GENERATED_PATHS=(
+            charts/keycloak-operator/crds
+            charts/keycloak-operator/files
+            operator/config/rbac
+          )
+
+          make manifests
+
+          if ! git diff --quiet -- "${GENERATED_PATHS[@]}"; then
+            echo "::error::Generated manifests/RBAC are out of date. Please run 'make manifests' locally and commit."
+            git --no-pager diff -- "${GENERATED_PATHS[@]}"
+            exit 1
+          fi
+
+          if [ -n "$(git ls-files --others --exclude-standard -- "${GENERATED_PATHS[@]}")" ]; then
+            echo "::error::Untracked generated manifests/RBAC found. Please run 'make manifests' locally and commit."
+            git ls-files --others --exclude-standard -- "${GENERATED_PATHS[@]}"
+            exit 1
+          fi
+
+      - name: Log in to GHCR
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.OPERATOR_IMAGE }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          context: operator
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Add Job Summary
+        run: |
+          echo "### 🐳 Operator Image Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" | while read tag; do
+            echo "| **Image** | \`${tag}\` |" >> $GITHUB_STEP_SUMMARY
+          done
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "| **Push** | skipped (pull request policy) |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ── 3. Build OCM Package ─────────────────────────────────────────────
+  build:
+    name: "3. Build OCM"
+    runs-on: ubuntu-latest
+    needs: lint
+    environment: cicd
+    if: ${{ (always() && (needs.lint.result == 'success' || needs.lint.result == 'skipped')) && (github.event_name != 'workflow_dispatch' || inputs.run_build) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.checkout_ref || github.ref }}
+
+      - name: Setup OCM CLI
+        uses: open-component-model/ocm-setup-action@8c71929f38d3486e352e5d7aaf813f36accaaf43
+        with:
+          version: ${{ env.OCM_CLI_VERSION }}
+
+      - name: Install Syft (SBOM)
+        run: |
+          if ! command -v syft >/dev/null 2>&1; then
+            SYFT_TARBALL="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+            curl -sSfL "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/${SYFT_TARBALL}" -o "/tmp/${SYFT_TARBALL}"
+            echo "${SYFT_LINUX_AMD64_SHA256}  /tmp/${SYFT_TARBALL}" | sha256sum -c -
+            tar xzf "/tmp/${SYFT_TARBALL}" -C /tmp syft
+            install -m 0755 /tmp/syft /usr/local/bin/syft
+          fi
+          syft version
+
+      - name: Build OCM Component Archive
+        run: |
+          chmod +x scripts/**/*.sh
+          ./scripts/ocm/ocm-create.sh
+
+      - name: Materialize Private Signing Key
+        if: ${{ github.event_name != 'pull_request' }}
+        env:
+          OCM_SIGNING_PRIVATE_KEY: ${{ secrets.OCM_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$OCM_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::Missing signing key secret (OCM_SIGNING_PRIVATE_KEY). Check that it exists in repository secrets or environment 'cicd' secrets. Note: secrets are not exposed to pull_request runs from forks."
+            exit 1
+          fi
+          printf '%s' "$OCM_SIGNING_PRIVATE_KEY" > ocm-key.priv
+          chmod 600 ocm-key.priv
+
+      - name: Sign OCM Component
+        if: ${{ github.event_name != 'pull_request' }}
+        run: ./scripts/ocm/ocm-sign.sh ocm-output/component-archive ./ocm-key.priv security/ocm-signing-public-key.pub
+
+      - name: Validate OCM Component Signature
+        if: ${{ github.event_name != 'pull_request' }}
+        run: ./scripts/ocm/ocm-validate.sh ocm-output/component-archive --public-key security/ocm-signing-public-key.pub
+
+      - name: Validate OCM Component Structure (PR)
+        if: ${{ github.event_name == 'pull_request' }}
+        run: ./scripts/ocm/ocm-validate.sh ocm-output/component-archive
+
+      - name: Remove Private Key Material
+        if: always()
+        run: |
+          shred -u ocm-key.priv 2>/dev/null || rm -f ocm-key.priv
+
+      - name: Prepare Artifacts
+        run: |
+          cp ocm-output/keycloak-bundle-ctf.tar.gz .
+          sha256sum keycloak-bundle-ctf.tar.gz > keycloak-bundle-ctf.tar.gz.sha256
+
+      - name: Upload Archive Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ocm-component-archive
+          path: |
+            keycloak-bundle-ctf.tar.gz
+            keycloak-bundle-ctf.tar.gz.sha256
+            security/ocm-signing-public-key.pub
+            ocm-sbom.cdx.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Add Job Summary
+        run: |
+          echo "### 📦 OCM Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Component** | \`opendefense.cloud/keycloak-bundle\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Artifact** | \`keycloak-bundle-ctf.tar.gz\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Checksum** | \`keycloak-bundle-ctf.tar.gz.sha256\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Signature** | \`keycloak-bundle-sig\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **SBOM** | \`ocm-sbom.cdx.json (CycloneDX)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Verification Passed** - Artifact is ready for transfer." >> $GITHUB_STEP_SUMMARY
+
+  # ── 4. Transfer to Registry ───────────────────────────────────────────
+  transfer:
+    name: "4. Transfer to Registry"
+    runs-on: ubuntu-latest
+    needs: [build, build-operator]
+    environment: cicd
+    # Both build jobs must succeed for Transfer to proceed.
+    # Security policy: transfer is disabled for pull_request events.
+    if: ${{ needs.build.result == 'success' && needs.build-operator.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.run_transfer) && github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.checkout_ref || github.ref }}
+
+      - name: Download Signed Artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ocm-component-archive
+          path: ocm-output
+
+      - name: Setup OCM CLI
+        uses: open-component-model/ocm-setup-action@8c71929f38d3486e352e5d7aaf813f36accaaf43
+        with:
+          version: ${{ env.OCM_CLI_VERSION }}
+
+      - name: Transfer Signed Component
+        env:
+          # Registry must be provided via Vars or Secrets
+          OCM_REGISTRY: ${{ vars.OCM_REGISTRY || secrets.OCM_REGISTRY }}
+          OCM_REGISTRY_USER: ${{ secrets.OCM_REGISTRY_USER }}
+          OCM_REGISTRY_PASSWORD: ${{ secrets.OCM_REGISTRY_PASSWORD }}
+          # Keep overwrite as default for release compatibility; can be switched to true later.
+          OCM_TRANSFER_IMMUTABLE: ${{ vars.OCM_TRANSFER_IMMUTABLE || 'false' }}
+        run: |
+          chmod +x scripts/**/*.sh
+          if [[ "$OCM_REGISTRY" == ghcr.io/* ]]; then
+            OCM_USER="${{ github.actor }}"
+            OCM_PASSWORD="${{ secrets.GITHUB_TOKEN }}"
+          else
+            OCM_USER="${OCM_REGISTRY_USER:-${{ github.actor }}}"
+            OCM_PASSWORD="${OCM_REGISTRY_PASSWORD}"
+          fi
+
+          if [ -z "$OCM_PASSWORD" ]; then
+            echo "::error::Missing registry password. For ghcr.io, GITHUB_TOKEN is used automatically. For other registries, set OCM_REGISTRY_PASSWORD."
+            exit 1
+          fi
+
+          ./scripts/ocm/ocm-transfer.sh ocm-output/keycloak-bundle-ctf.tar.gz --user "$OCM_USER" --password "$OCM_PASSWORD"
+
+      - name: Add Job Summary
+        if: success()
+        env:
+          OCM_REGISTRY: ${{ vars.OCM_REGISTRY || secrets.OCM_REGISTRY }}
+          OCM_TRANSFER_IMMUTABLE: ${{ vars.OCM_TRANSFER_IMMUTABLE || 'false' }}
+        run: |
+          echo "| **Transfer** | ✅ Success | Target: \`${{ env.OCM_REGISTRY }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Transfer mode** | immutable=${{ env.OCM_TRANSFER_IMMUTABLE }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ── 5. Deploy + Smoke Test + Cleanup ─────────────────────────────────
+  deploy:
+    name: "5. Deploy & Verify"
+    runs-on: ubuntu-latest
+    needs: [build, build-operator]
+    environment: cicd
+    # Only serialize deploys against the shared cluster namespace.
+    # Build/lint/transfer jobs remain parallel across workflow runs.
+    concurrency:
+      group: keycloak-cicd-deploy-shared-cluster
+      cancel-in-progress: false
+    # Deploy can run in parallel to Transfer once build artifacts exist.
+    # Security policy: deploy is disabled for pull_request events.
+    if: ${{ needs.build.result == 'success' && needs.build-operator.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.run_deploy) && github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.checkout_ref || github.ref }}
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v4
+        with:
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
+      - name: Download Signed Artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ocm-component-archive
+          path: ocm-output
+
+      - name: Setup OCM CLI
+        uses: open-component-model/ocm-setup-action@8c71929f38d3486e352e5d7aaf813f36accaaf43
+        with:
+          version: ${{ env.OCM_CLI_VERSION }}
+
+      - name: Deploy Keycloak Instance
+        env:
+          OPERATOR_IMAGE_REPO: ${{ env.OPERATOR_IMAGE }}
+          OPERATOR_IMAGE_TAG: sha-${{ github.sha }}
+          OPERATOR_IMAGE_PULL_SECRET: ghcr-pull-secret
+          REGISTRY_USERNAME: ${{ secrets.OCM_REGISTRY_USER || github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.OCM_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+          OCM_VERIFY_REQUIRED: "true"
+          OCM_CTF_PATH: ocm-output/keycloak-bundle-ctf.tar.gz
+          OCM_PUBLIC_KEY_PATH: security/ocm-signing-public-key.pub
+        run: |
+          # Trim the tag to 7 chars to match docker/metadata-action short format
+          export OPERATOR_IMAGE_TAG="sha-${GITHUB_SHA::7}"
+          chmod +x scripts/**/*.sh
+          ./scripts/deploy/deploy-all.sh ${INSTANCE_NAME} --namespace ${NAMESPACE} --clean || {
+            echo "Deployment failed! Fetching operator logs for debugging..."
+            kubectl logs -n ${NAMESPACE} -l app=keycloak-operator --tail=200 || true
+            exit 1
+          }
+
+      - name: Verify Deployment
+        run: |
+          NAMESPACE="${{ env.NAMESPACE }}"
+          echo "=== Quick Readiness Recheck ==="
+          kubectl wait pod -n "$NAMESPACE" \
+            -l cnpg.io/cluster=keycloak-db,cnpg.io/instanceRole=primary \
+            --for=condition=Ready --timeout=120s
+
+          kubectl wait --for=condition=available deployment/keycloak \
+            -n "$NAMESPACE" --timeout=120s
+
+          echo "=== Pod Status ==="
+          kubectl get pods -n "$NAMESPACE" -o wide
+
+      - name: Smoke Test
+        run: |
+          NAMESPACE="${{ env.NAMESPACE }}"
+          echo "=== Running dev-status.sh for Smoke Test ==="
+          ./scripts/utils/status.sh ${{ env.INSTANCE_NAME }} "$NAMESPACE"
+
+          echo "=== Keycloak HTTP Health Check ==="
+          kubectl port-forward -n "$NAMESPACE" deploy/keycloak 9000:9000 > pf.log 2>&1 &
+          PF_PID=$!
+          
+          SUCCESS=false
+          for i in {1..20}; do
+            sleep 1
+            if curl -sf http://localhost:9000/health/ready > /dev/null; then
+              SUCCESS=true
+              break
+            fi
+          done
+          
+          kill $PF_PID || true
+          
+          if [ "$SUCCESS" = "true" ]; then
+            echo ""
+            echo "Health check passed ✅"
+          else
+            echo "Health check failed ❌"
+            cat pf.log || true
+            exit 1
+          fi
+
+      - name: Verify Leader Election (HA)
+        run: |
+          NAMESPACE="${{ env.NAMESPACE }}"
+          echo "=== Verifying Operator Leader Election ==="
+
+          # 1. Wait for both replicas to be ready
+          kubectl wait --for=jsonpath='{.status.readyReplicas}'=2 deployment/keycloak-operator -n "$NAMESPACE" --timeout=300s
+          echo "Both operator replicas are ready ✅"
+
+          # 2. Verify the Lease object exists and has a holder (poll to avoid startup race)
+          HOLDER=""
+          for i in $(seq 1 30); do
+            HOLDER=$(kubectl get lease keycloak-operator-leader -n "$NAMESPACE" -o jsonpath='{.spec.holderIdentity}' 2>/dev/null || true)
+            if [ -n "$HOLDER" ]; then
+              break
+            fi
+            sleep 2
+          done
+          if [ -n "$HOLDER" ]; then
+            echo "Leader election success: Lease held by $HOLDER ✅"
+          else
+            echo "Leader election failed: No lease holder found ❌"
+            kubectl get lease -n "$NAMESPACE" -o wide || true
+            kubectl auth can-i get leases.coordination.k8s.io -n "$NAMESPACE" --as="system:serviceaccount:$NAMESPACE:keycloak-operator" || true
+            kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/name=keycloak-operator --tail=200 || true
+            exit 1
+          fi
+
+          # 3. Verify exactly 2 pods are running
+          POD_COUNT=$(kubectl get pods -l app.kubernetes.io/name=keycloak-operator -n "$NAMESPACE" --field-selector=status.phase=Running -o name | wc -l)
+          if [ "$POD_COUNT" -ge 2 ]; then
+            echo "HA verified: $POD_COUNT operator pods running ✅"
+          else
+            echo "HA check failed: Only $POD_COUNT operator pods running ❌"
+            kubectl get pods -l app.kubernetes.io/name=keycloak-operator -n "$NAMESPACE" -o wide
+            exit 1
+          fi
+
+      - name: Verify CRD Smoke Suite
+        run: |
+          set -euo pipefail
+          NAMESPACE="${{ env.NAMESPACE }}"
+          echo "=== CRD Smoke Suite (Foundation + Create/Verify + Coexistence) ==="
+          mkdir -p reports
+          chmod +x ./scripts/tests/*.sh ./scripts/tests/lib/*.sh
+          CRD_TEST_REPORT_FILE="reports/crd-smoke.xml" ./scripts/tests/test-crd-smoke.sh "$NAMESPACE"
+
+      - name: Verify CRD Deletion Lifecycle
+        run: |
+          set -euo pipefail
+          NAMESPACE="${{ env.NAMESPACE }}"
+          echo "=== CRD Lifecycle Suite (Delete/Purge Guarantees) ==="
+          mkdir -p reports
+          chmod +x ./scripts/tests/*.sh ./scripts/tests/lib/*.sh
+          CRD_TEST_REPORT_FILE="reports/crd-lifecycle.xml" ./scripts/tests/test-crd-lifecycle.sh "$NAMESPACE"
+
+      - name: Verify Backup and Restore (CNPG Live)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_backup_restore_verify }}
+        env:
+          BACKUP_S3_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+          BACKUP_S3_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+          BACKUP_S3_DESTINATION_PATH_CI: ${{ secrets.BACKUP_S3_DESTINATION_PATH_CI }}
+          BACKUP_S3_ENDPOINT_URL_CI: ${{ secrets.BACKUP_S3_ENDPOINT_URL_CI }}
+          MINIO_CI_ACCESS_KEY_ID: ${{ secrets.MINIO_CI_ACCESS_KEY_ID }}
+          MINIO_CI_SECRET_ACCESS_KEY: ${{ secrets.MINIO_CI_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          NAMESPACE="${{ env.NAMESPACE }}"
+          CREDENTIALS_SECRET="keycloak-backup-s3"
+          ENV_FILE="$(mktemp)"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BACKUP_PROVIDER="${{ inputs.backup_provider }}"
+          else
+            BACKUP_PROVIDER="incluster-minio"
+          fi
+
+          if [ "$BACKUP_PROVIDER" = "external-s3" ]; then
+            if [ -z "${BACKUP_S3_ACCESS_KEY_ID:-}" ] || [ -z "${BACKUP_S3_SECRET_ACCESS_KEY:-}" ] || [ -z "${BACKUP_S3_DESTINATION_PATH_CI:-}" ]; then
+              echo "::error::Missing external S3 CI secrets. Required: BACKUP_S3_ACCESS_KEY_ID, BACKUP_S3_SECRET_ACCESS_KEY, BACKUP_S3_DESTINATION_PATH_CI"
+              exit 1
+            fi
+          fi
+
+          chmod +x scripts/tests/setup-backup-provider.sh scripts/tests/test-backup-restore.sh
+
+          ./scripts/tests/setup-backup-provider.sh \
+            --provider "$BACKUP_PROVIDER" \
+            --context ci \
+            --namespace "$NAMESPACE" \
+            --cluster-name keycloak-db \
+            --run-id "${GITHUB_RUN_ID}" \
+            --credentials-secret "$CREDENTIALS_SECRET" \
+            --output-env-file "$ENV_FILE" \
+            --destination-path "${BACKUP_S3_DESTINATION_PATH_CI:-}" \
+            --endpoint-url "${BACKUP_S3_ENDPOINT_URL_CI:-}" \
+            --access-key-id "${BACKUP_S3_ACCESS_KEY_ID:-}" \
+            --secret-access-key "${BACKUP_S3_SECRET_ACCESS_KEY:-}" \
+            --minio-access-key-id "${MINIO_CI_ACCESS_KEY_ID:-}" \
+            --minio-secret-access-key "${MINIO_CI_SECRET_ACCESS_KEY:-}"
+
+          # shellcheck disable=SC1090
+          source "$ENV_FILE"
+
+          ARGS=(
+            --live
+            --namespace "$NAMESPACE"
+            --cluster-name keycloak-db
+            --destination-path "$BACKUP_DESTINATION_PATH"
+            --credentials-secret "$CREDENTIALS_SECRET"
+            --timeout-seconds 600
+            --keep-backup-cr
+          )
+
+          if [ -n "${BACKUP_ENDPOINT_URL:-}" ]; then
+            ARGS+=(--endpoint-url "$BACKUP_ENDPOINT_URL")
+          fi
+
+          RUN_LOG="$(mktemp)"
+          ./scripts/tests/test-backup-restore.sh "${ARGS[@]}" 2>&1 | tee "$RUN_LOG"
+
+          BACKUP_CR_NAME="$(sed -n 's/^\[INFO\] Applying live backup smoke CR: \([^[:space:]]\+\)$/\1/p' "$RUN_LOG" | tail -1)"
+          RESTORE_CLUSTER_NAME="$(sed -n 's/^\[INFO\] Applying live CNPG recovery cluster: \([^[:space:]]\+\)$/\1/p' "$RUN_LOG" | tail -1)"
+          OBJECT_STORE_NAME="keycloak-db-backup-store"
+
+          RESTORE_READY="unknown"
+          if [ -n "$RESTORE_CLUSTER_NAME" ]; then
+            RESTORE_READY="$(kubectl get "clusters.postgresql.cnpg.io/${RESTORE_CLUSTER_NAME}" -n "$NAMESPACE" -o jsonpath='{range .status.conditions[?(@.type=="Ready")]}{.status}{end}' 2>/dev/null || true)"
+            [ -n "$RESTORE_READY" ] || RESTORE_READY="unknown"
+          fi
+
+          BACKUP_CR_EXISTS="unknown"
+          if [ -n "$BACKUP_CR_NAME" ]; then
+            if kubectl get "backups.postgresql.cnpg.io/${BACKUP_CR_NAME}" -n "$NAMESPACE" >/dev/null 2>&1; then
+              BACKUP_CR_EXISTS="yes"
+            else
+              BACKUP_CR_EXISTS="no (expected; smoke CR is deleted after completion)"
+            fi
+          fi
+
+          echo "### Backup & Restore Verification" >> "$GITHUB_STEP_SUMMARY"
+          echo "- provider: ${BACKUP_PROVIDER}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- destination: ${BACKUP_DESTINATION_PATH}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- objectStore: ${OBJECT_STORE_NAME}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- backupCR: ${BACKUP_CR_NAME:-unknown}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- backupCRPresentAfterTest: ${BACKUP_CR_EXISTS}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- restoreCluster: ${RESTORE_CLUSTER_NAME:-unknown}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- restoreReadyCondition: ${RESTORE_READY}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- cleanup: restore cluster and backup CR are intentionally kept for post-run inspection; backup data remains in object storage" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish CRD Test Report Summary
+        if: always()
+        run: |
+          if ls reports/*.xml >/dev/null 2>&1; then
+            TESTS=$(grep -h -oE 'tests="[0-9]+"' reports/*.xml | cut -d'"' -f2 | awk '{s+=$1} END{print s+0}')
+            FAILURES=$(grep -h -oE 'failures="[0-9]+"' reports/*.xml | cut -d'"' -f2 | awk '{s+=$1} END{print s+0}')
+            SKIPPED=$(grep -h -oE 'skipped="[0-9]+"' reports/*.xml | cut -d'"' -f2 | awk '{s+=$1} END{print s+0}')
+            echo "### CRD Verification Report" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "| :--- | ---: |" >> $GITHUB_STEP_SUMMARY
+            echo "| Testcases | ${TESTS} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failures | ${FAILURES} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Skipped | ${SKIPPED} |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No CRD report files found." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload CRD Test Reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: crd-test-reports-${{ env.INSTANCE_NAME }}
+          path: reports/*.xml
+          if-no-files-found: warn
+
+      - name: Observability Verify
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_observability_verify }}
+        run: |
+          NAMESPACE="${{ env.NAMESPACE }}"
+          echo "=== Running Observability Verification ==="
+          chmod +x scripts/tests/test-observability.sh
+          ./scripts/tests/test-observability.sh "$NAMESPACE"
+        # test-observability.sh writes the per-test result table to
+        # $GITHUB_STEP_SUMMARY directly, so results are visible in the
+        # Actions summary tab regardless of pass/fail.
+
+      - name: Add Job Summary
+        if: success()
+        run: |
+          echo "| **Deploy** | ✅ Success | Namespace: \`${{ env.NAMESPACE }}\` |" >> $GITHUB_STEP_SUMMARY
+

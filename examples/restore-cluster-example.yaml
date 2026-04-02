@@ -1,0 +1,22 @@
+---
+# CNPG recovery cluster example (non-destructive restore flow)
+# Creates a new cluster restored from object storage backup source.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: keycloak-db-restore
+  namespace: keycloak-prod
+spec:
+  instances: 1
+  bootstrap:
+    recovery:
+      source: keycloak-backup
+  externalClusters:
+    - name: keycloak-backup
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: keycloak-backup-store
+          serverName: keycloak-db
+  storage:
+    size: 5Gi

@@ -1,0 +1,10 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: AuthFlow
+metadata:
+  name: ci-test-browser-mfa
+spec:
+  realmRef: master
+  alias: ci-test-browser-mfa
+  description: CI Test Browser Flow with MFA
+  topLevel: true
+  requireMFA: true

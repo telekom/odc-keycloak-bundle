@@ -1,0 +1,16 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: IdentityProvider
+metadata:
+  name: ci-test-oidc-provider
+spec:
+  realmRef: master
+  alias: ci-test-oidc
+  type: oidc
+  enabled: true
+  displayName: CI Test OIDC Provider
+  trustEmail: true
+  config:
+    authorizationUrl: https://idp.example.com/auth
+    tokenUrl: https://idp.example.com/token
+    clientId: ci-test-client
+    defaultScope: openid profile email

@@ -1,0 +1,13 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: Group
+metadata:
+  name: tenant-a-developers
+  namespace: keycloak-dev  # Must match the Keycloak instance namespace
+spec:
+  realmRef: tenant-a
+  name: developers
+  attributes:
+    department:
+      - engineering
+  realmRoles:
+    - developer

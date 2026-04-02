@@ -1,0 +1,13 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: Realm
+metadata:
+  name: tenant-a
+  namespace: keycloak-dev  # Must match the Keycloak instance namespace
+spec:
+  realmName: tenant-a
+  displayName: "Tenant A"
+  enabled: true
+  registrationAllowed: false
+  resetPasswordAllowed: true
+  bruteForceProtected: true
+  accessTokenLifespan: 300

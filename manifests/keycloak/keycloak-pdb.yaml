@@ -1,0 +1,13 @@
+# PodDisruptionBudget ensures at least one Keycloak replica stays available
+# during voluntary disruptions such as node drains and rolling updates.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: keycloak
+  labels:
+    app: keycloak
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: keycloak

@@ -1,0 +1,107 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: keycloak
+  labels:
+    app: keycloak
+spec:
+  groups:
+    - name: keycloak.availability
+      rules:
+        - alert: KeycloakDown
+          expr: absent(up{job="keycloak"}) or up{job="keycloak"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Keycloak instance is down"
+            description: "Keycloak pod {{ $labels.pod }} has been unreachable for more than 2 minutes."
+
+        - alert: KeycloakNotReady
+          expr: keycloak_ready == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Keycloak is not ready"
+            description: "Keycloak has been reporting not-ready for more than 5 minutes."
+
+    - name: keycloak.authentication
+      rules:
+        - alert: KeycloakHighLoginFailureRate
+          expr: |
+            rate(keycloak_failed_login_attempts_total[5m]) > 10
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High Keycloak login failure rate"
+            description: "More than 10 failed logins per second over the last 5 minutes in realm {{ $labels.realm }}."
+
+        - alert: KeycloakBruteForceDetected
+          expr: |
+            rate(keycloak_failed_login_attempts_total[1m]) > 30
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Possible brute force attack on Keycloak"
+            description: "More than 30 failed logins per second in the last minute in realm {{ $labels.realm }}."
+
+    - name: keycloak.sessions
+      rules:
+        - alert: KeycloakHighActiveSessions
+          expr: |
+            keycloak_active_sessions > 10000
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Keycloak active session count is very high"
+            description: "Realm {{ $labels.realm }} has more than 10,000 active sessions."
+
+    - name: keycloak.database
+      rules:
+        - alert: KeycloakDBConnectionPoolExhausted
+          expr: |
+            keycloak_database_connection_pool_active / keycloak_database_connection_pool_max >= 0.9
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Keycloak DB connection pool near exhaustion"
+            description: "Keycloak is using more than 90% of its database connection pool."
+
+    - name: keycloak.pod
+      rules:
+        - alert: KeycloakPodRestartingFrequently
+          expr: |
+            increase(kube_pod_container_status_restarts_total{container="keycloak"}[1h]) > 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Keycloak pod is restarting frequently"
+            description: "Keycloak pod {{ $labels.pod }} has restarted more than 3 times in the last hour."
+
+    - name: keycloak-db.availability
+      rules:
+        - alert: KeycloakDBClusterNotReady
+          expr: |
+            cnpg_collector_up{cluster="keycloak-db"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Keycloak database cluster is not ready"
+            description: "CloudNativePG cluster keycloak-db has been unavailable for more than 2 minutes."
+
+        - alert: KeycloakDBReplicationLag
+          expr: |
+            cnpg_pg_replication_lag{cluster="keycloak-db"} > 30
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Keycloak database replication lag is high"
+            description: "Replication lag on keycloak-db is {{ $value }}s, exceeding 30s threshold."

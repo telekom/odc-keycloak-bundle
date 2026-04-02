@@ -1,0 +1,10 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: Group
+metadata:
+  name: ci-test-group
+spec:
+  realmRef: master
+  name: ci-test-group
+  attributes:
+    department:
+      - ci-testing

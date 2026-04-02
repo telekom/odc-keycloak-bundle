@@ -1,0 +1,19 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: Client
+metadata:
+  name: odc-showcase-client
+  namespace: keycloak-dev  # Must match the Keycloak instance namespace
+spec:
+  realmRef: master
+  clientId: odc-showcase-client
+  name: ODC Showcase Application
+  description: "Generic showcase client for the Open Source Keycloak Bundle"
+  enabled: true
+  protocol: openid-connect
+  publicClient: false
+  redirectUris:
+    - "https://poc.example.com/*"
+    - "http://localhost:8080/*"
+  webOrigins:
+    - "http://localhost:8080"
+    - "https://poc.example.com"

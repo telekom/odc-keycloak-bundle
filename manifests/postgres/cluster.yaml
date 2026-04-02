@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/config/crd/bases/postgresql.cnpg.io_clusters.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: keycloak-db
+spec:
+  instances: 1
+
+  storage:
+    size: 5Gi
+
+  bootstrap:
+    initdb:
+      database: keycloak
+      owner: keycloak
+
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: "128MB"

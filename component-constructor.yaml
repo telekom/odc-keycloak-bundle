@@ -1,0 +1,168 @@
+name: opendefense.cloud/keycloak-bundle
+version: 0.2.0
+provider:
+  name: opendefensecloud
+labels:
+  - name: org.opencontainers.image.source
+    value: https://github.com/opendefensecloud/keycloak-bundle
+  - name: app.kubernetes.io/name
+    value: keycloak-bundle
+  - name: app.kubernetes.io/component
+    value: identity-platform
+  - name: app.kubernetes.io/part-of
+    value: keycloak-bundle
+
+resources:
+  # Keycloak image
+  - name: keycloak-image
+    type: ociImage
+    version: 26.5.5
+    relation: local
+    access:
+      type: ociArtifact
+      imageReference: quay.io/keycloak/keycloak:26.5.5
+
+  # PostgreSQL image
+  - name: postgres-image
+    type: ociImage
+    version: "18.3"
+    relation: local
+    access:
+      type: ociArtifact
+      imageReference: ghcr.io/cloudnative-pg/postgresql:18.3
+
+  # CloudNativePG operator image
+  - name: cnpg-operator-image
+    type: ociImage
+    version: "1.28.1"
+    relation: local
+    access:
+      type: ociArtifact
+      imageReference: ghcr.io/cloudnative-pg/cloudnative-pg:1.28.1
+
+  # Prometheus Operator image
+  - name: prometheus-operator-image
+    type: ociImage
+    version: "0.80.1"
+    relation: local
+    access:
+      type: ociArtifact
+      imageReference: quay.io/prometheus-operator/prometheus-operator:v0.80.1
+
+  # Realm CRD
+  - name: realm-crd
+    type: kubernetes
+    version: 0.2.0
+    relation: local
+    input:
+      type: file
+      path: charts/keycloak-operator/crds/keycloak.opendefense.cloud_realms.yaml
+      mediaType: application/yaml
+
+  # Client CRD
+  - name: client-crd
+    type: kubernetes
+    version: 0.2.0
+    relation: local
+    input:
+      type: file
+      path: charts/keycloak-operator/crds/keycloak.opendefense.cloud_clients.yaml
+      mediaType: application/yaml
+
+  # User CRD
+  - name: user-crd
+    type: kubernetes
+    version: 0.2.0
+    relation: local
+    input:
+      type: file
+      path: charts/keycloak-operator/crds/keycloak.opendefense.cloud_users.yaml
+      mediaType: application/yaml
+
+  # Group CRD
+  - name: group-crd
+    type: kubernetes
+    version: 0.2.0
+    relation: local
+    input:
+      type: file
+      path: charts/keycloak-operator/crds/keycloak.opendefense.cloud_groups.yaml
+      mediaType: application/yaml
+
+  # ClientScope CRD
+  - name: clientscope-crd
+    type: kubernetes
+    version: 0.2.0
+    relation: local
+    input:
+      type: file
+      path: charts/keycloak-operator/crds/keycloak.opendefense.cloud_clientscopes.yaml
+      mediaType: application/yaml
+
+  # AuthFlow CRD
+  - name: authflow-crd
+    type: kubernetes
+    version: 0.2.0
+    relation: local
+    input:
+      type: file
+      path: charts/keycloak-operator/crds/keycloak.opendefense.cloud_authflows.yaml
+      mediaType: application/yaml
+
+  # IdentityProvider CRD
+  - name: identityprovider-crd
+    type: kubernetes
+    version: 0.2.0
+    relation: local
+    input:
+      type: file
+      path: charts/keycloak-operator/crds/keycloak.opendefense.cloud_identityproviders.yaml
+      mediaType: application/yaml
+
+  # KRO ResourceGraphDefinition
+  - name: keycloak-instance-rgd
+    type: blueprint
+    version: 0.2.0
+    relation: local
+    input:
+      type: file
+      path: kro/rgd/keycloak-instance-rgd.yaml
+      mediaType: application/yaml
+
+  # Keycloak Operator Helm chart
+  - name: keycloak-operator
+    type: helmChart
+    version: 0.2.0
+    relation: local
+    input:
+      type: helm
+      path: charts/keycloak-operator
+
+  # CycloneDX SBOM for offline supply-chain and vulnerability analysis
+  - name: keycloak-bundle-sbom
+    type: sbom
+    version: 0.2.0
+    relation: local
+    input:
+      type: file
+      path: ocm-sbom.cdx.json
+      mediaType: application/vnd.cyclonedx+json
+
+  # Manifests
+  - name: manifests
+    type: directory
+    version: 0.2.0
+    relation: local
+    input:
+      type: file
+      path: manifests.tar
+      mediaType: application/x-tar
+
+sources:
+  - name: source
+    type: git
+    version: 0.2.0
+    access:
+      type: git
+      repoUrl: https://github.com/opendefensecloud/keycloak-bundle.git
+      ref: refs/heads/main

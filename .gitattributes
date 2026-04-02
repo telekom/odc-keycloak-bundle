@@ -1,0 +1,5 @@
+# Keep signing public key with LF line endings across platforms.
+security/ocm-signing-public-key.pub text eol=lf
+
+# Keep all shell scripts LF-only for Linux CI compatibility.
+*.sh               text eol=lf

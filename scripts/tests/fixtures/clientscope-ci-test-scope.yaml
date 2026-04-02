@@ -1,0 +1,11 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: ClientScope
+metadata:
+  name: ci-test-scope
+spec:
+  realmRef: master
+  name: ci-test-scope
+  protocol: openid-connect
+  description: CI integration test scope
+  attributes:
+    include.in.token.scope: "true"

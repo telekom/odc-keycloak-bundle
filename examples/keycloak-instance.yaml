@@ -1,0 +1,7 @@
+apiVersion: kro.run/v1alpha1
+kind: KeycloakInstance
+metadata:
+  name: dev
+spec:
+  namespace: keycloak-dev   # administrator chooses the exact namespace name
+  replicas: 1

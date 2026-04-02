@@ -1,0 +1,14 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: ClientScope
+metadata:
+  name: tenant-a-profile
+  namespace: keycloak-dev  # Must match the Keycloak instance namespace
+spec:
+  realmRef: tenant-a
+  name: profile
+  protocol: openid-connect
+  description: "Standard profile scope exposing name and email claims"
+  attributes:
+    include.in.token.scope: "true"
+    display.on.consent.screen: "true"
+    consent.screen.text: "Access your profile information"

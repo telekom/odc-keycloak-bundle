@@ -1,0 +1,45 @@
+# Default values for keycloak-operator
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/opendefensecloud/keycloak-operator
+  pullPolicy: IfNotPresent
+  tag: "0.2.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+labels:
+  component: keycloak-operator
+  partOf: keycloak-bundle
+
+serviceAccount:
+  create: true
+  name: ""
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Operator configuration
+operator:
+  logLevel: info
+  # Watch all namespaces or specific ones
+  watchNamespaces: ""
+  configCliImage:
+    # Image to use for the configuration Job
+    repository: quay.io/adorsys/keycloak-config-cli
+    tag: latest-26
+  adminSecret:
+    name: "keycloak-admin-creds"
+    key: "password"

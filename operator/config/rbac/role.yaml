@@ -1,0 +1,99 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - keycloak.opendefense.cloud
+  resources:
+  - authflows
+  - clients
+  - clientscopes
+  - groups
+  - identityproviders
+  - realms
+  - users
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - keycloak.opendefense.cloud
+  resources:
+  - authflows/finalizers
+  - clients/finalizers
+  - clientscopes/finalizers
+  - groups/finalizers
+  - identityproviders/finalizers
+  - realms/finalizers
+  - users/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - keycloak.opendefense.cloud
+  resources:
+  - authflows/status
+  - clients/status
+  - clientscopes/status
+  - groups/status
+  - identityproviders/status
+  - realms/status
+  - users/status
+  verbs:
+  - get
+  - patch
+  - update

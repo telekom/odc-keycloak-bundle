@@ -1,0 +1,17 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: User
+metadata:
+  name: ci-test-user
+spec:
+  realmRef: master
+  username: ci-test-user
+  email: ci-test@example.com
+  firstName: CI
+  lastName: Test
+  enabled: true
+  emailVerified: true
+  groups:
+    - ci-test-group
+  initialPassword:
+    secretName: ci-test-user-password
+    secretKey: password

@@ -1,0 +1,17 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: Client
+metadata:
+  name: spa-frontend
+  namespace: keycloak-dev  # Must match the Keycloak instance namespace
+spec:
+  realmRef: tenant-a
+  clientId: spa-frontend
+  name: SPA Frontend
+  description: Public client for single-page application
+  enabled: true
+  protocol: openid-connect
+  publicClient: true
+  redirectUris:
+    - "http://localhost:4200/*"
+  webOrigins:
+    - "http://localhost:4200"

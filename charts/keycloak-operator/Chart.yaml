@@ -1,0 +1,18 @@
+apiVersion: v2
+name: keycloak-operator
+description: Kubernetes Operator for managing Keycloak resources (Realm, Client, Group, User, ClientScope, AuthFlow, IdentityProvider) via CRDs
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+
+keywords:
+  - keycloak
+  - iam
+  - operator
+  - kubernetes
+
+maintainers:
+  - name: Keycloak OCM Contributors
+
+sources:
+  - https://github.com/opendefensecloud/keycloak-bundle

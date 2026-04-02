@@ -1,0 +1,88 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "description": "Automerge patch updates for all dependencies",
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    },
+    {
+      "description": "Automerge minor updates for GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor"],
+      "automerge": true
+    },
+    {
+      "description": "Group all Keycloak updates",
+      "matchPackageNames": ["quay.io/keycloak/keycloak"],
+      "groupName": "keycloak",
+      "labels": ["dependencies", "keycloak"]
+    },
+    {
+      "description": "Group all CloudNativePG updates",
+      "matchPackageNames": [
+        "ghcr.io/cloudnative-pg/cloudnative-pg",
+        "cloudnative-pg/cloudnative-pg"
+      ],
+      "groupName": "cloudnative-pg",
+      "labels": ["dependencies", "cloudnative-pg"]
+    },
+    {
+      "description": "Automerge busybox and alpine patch+minor updates",
+      "matchPackageNames": ["busybox", "alpine"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true
+    },
+    {
+      "description": "Group GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "labels": ["dependencies", "ci"]
+    }
+  ],
+  "kubernetes": {
+    "fileMatch": ["^manifests/.*\\.yaml$", "^kro/.*\\.yaml$"]
+  },
+  "helm-values": {
+    "fileMatch": ["^charts/.*/values\\.yaml$"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update OCI image references in component-constructor.yaml",
+      "fileMatch": ["^component-constructor\\.yaml$"],
+      "matchStrings": [
+        "imageReference:\\s*(?<depName>\\S+):(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Parse image-ref in GitHub Actions for Trivy scans",
+      "fileMatch": ["^\\.github/workflows/.*\\.ya?ml$"],
+      "matchStrings": [
+        "image-ref:\\s*(?<depName>[^\\s:]+):(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Update CNPG_VERSION in CNPG installation bash script",
+      "fileMatch": ["^scripts/.*\\.sh$"],
+      "matchStrings": [
+        "CNPG_VERSION=\"\\$\\{1:-(?<currentValue>[^}]+)\\}.*?"
+      ],
+      "depNameTemplate": "cloudnative-pg/cloudnative-pg",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "Update tool version pins annotated with renovate metadata",
+      "fileMatch": ["^\\.github/workflows/ci\\.ya?ml$"],
+      "matchStrings": [
+        "(?:#|//)\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*[A-Z0-9_]+\\s*[:=]\\s*[\"']?(?<currentValue>[^\"'\\s]+)[\"']?"
+      ]
+    }
+  ]
+}

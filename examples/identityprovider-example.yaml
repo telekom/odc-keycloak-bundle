@@ -1,0 +1,17 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: IdentityProvider
+metadata:
+  name: tenant-a-oidc-provider
+  namespace: keycloak-dev  # Must match the Keycloak instance namespace
+spec:
+  realmRef: tenant-a
+  alias: tenant-a-oidc
+  type: oidc
+  enabled: true
+  displayName: "Tenant A Corporate OIDC"
+  trustEmail: true
+  config:
+    authorizationUrl: "https://idp.corp.example.com/auth"
+    tokenUrl: "https://idp.corp.example.com/token"
+    clientId: "tenant-a-keycloak-client"
+    defaultScope: "openid profile email"

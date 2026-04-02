@@ -1,0 +1,74 @@
+---
+# ServiceAccount used by the Prometheus pod for target discovery.
+# The matching ClusterRole and ClusterRoleBinding are created per-instance by
+# deploy-all.sh so that multiple parallel instances do not share RBAC objects.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  labels:
+    app: keycloak
+---
+# User-facing Service that exposes the Prometheus HTTP API at port 9090.
+# Used by test-observability.sh (Test 5) for port-forwarding and API queries.
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  labels:
+    app: keycloak
+spec:
+  selector:
+    prometheus: keycloak
+  ports:
+    - name: web
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+---
+# Prometheus instance managed by the Prometheus Operator.
+# Selects the keycloak ServiceMonitor, PodMonitor, and PrometheusRule by
+# label app=keycloak.  Uses in-memory (emptyDir) storage — ephemeral but
+# sufficient for dev clusters and CI.  evaluationInterval is set to 15s so
+# alert-state transitions appear quickly in automated tests.
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: keycloak
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  serviceAccountName: prometheus
+
+  # Select our monitoring resources by label
+  serviceMonitorSelector:
+    matchLabels:
+      app: keycloak
+  podMonitorSelector:
+    matchLabels:
+      app: keycloak
+  ruleSelector:
+    matchLabels:
+      app: keycloak
+
+  # Evaluate alerting rules every 15 s (default is 1 m).
+  # Allows automated tests to observe pending/firing state within ~60 s of
+  # the fault being injected (30 s scrape interval + 15 s eval + buffer).
+  evaluationInterval: 15s
+
+  # Keep only 2 h of data — this instance is for CI and dev clusters only.
+  retention: 2h
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 400Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    fsGroup: 65534

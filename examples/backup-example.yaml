@@ -1,0 +1,59 @@
+---
+# Prerequisites:
+#   kubectl create secret generic keycloak-backup-s3 -n <namespace> \
+#     --from-literal=ACCESS_KEY_ID=<id> \
+#     --from-literal=SECRET_ACCESS_KEY=<secret>
+
+# Example 0: Plugin ObjectStore
+# The Barman Cloud Plugin reads credentials and destination from this resource.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: keycloak-backup-store
+  namespace: keycloak-prod
+spec:
+  configuration:
+    destinationPath: s3://my-bucket/keycloak
+    endpointURL: https://s3.example.com
+    s3Credentials:
+      accessKeyId:
+        name: keycloak-backup-s3
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: keycloak-backup-s3
+        key: SECRET_ACCESS_KEY
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+
+---
+
+# Example 1: On-demand backup
+# CNPG creates a Backup object for the given cluster.
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  name: keycloak-db-ondemand
+  namespace: keycloak-prod
+spec:
+  cluster:
+    name: keycloak-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+---
+# Example 2: Scheduled (recurring) backup
+# CNPG creates recurring Backup resources according to cron schedule.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: keycloak-db-nightly
+  namespace: keycloak-prod
+spec:
+  cluster:
+    name: keycloak-db
+  schedule: "0 2 * * *"
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
