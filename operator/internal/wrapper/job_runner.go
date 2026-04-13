@@ -134,7 +134,7 @@ func (r *JobRunner) SyncRealm(ctx context.Context, realm *v1alpha1.Realm, export
 
 	// Spawn new Job
 	backoffLimit := int32(2)
-	
+
 	image := r.ConfigCLIImage
 	if image == "" {
 		return fmt.Errorf("config-cli image not configured (set CONFIG_CLI_IMAGE)")
