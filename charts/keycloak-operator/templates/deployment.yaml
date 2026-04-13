@@ -50,9 +50,13 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: WATCH_NAMESPACE
+              {{- if .Values.operator.watchNamespaces }}
+              value: {{ .Values.operator.watchNamespaces | quote }}
+              {{- else }}
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+              {{- end }}
             - name: LOG_LEVEL
               value: {{ .Values.operator.logLevel | quote }}
             - name: CONFIG_CLI_IMAGE

@@ -19,7 +19,6 @@ This directory contains deterministic fixtures used only by the CRD integration 
 - `clientscope-ci-test-scope.yaml` - smoke scope
 - `group-ci-test-group.yaml` - smoke group
 - `client-odc-showcase.yaml` - smoke client
-- `secret-ci-test-user-password.yaml` - test secret for user bootstrap
 - `user-ci-test-user.yaml` - smoke user and group membership check
 - `identityprovider-ci-test-oidc.yaml` - lifecycle test target
 - `authflow-ci-test-browser-mfa.yaml` - lifecycle test target

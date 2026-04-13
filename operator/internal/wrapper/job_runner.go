@@ -8,6 +8,7 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -63,6 +64,7 @@ func (r *JobRunner) discoverPullSecrets(ctx context.Context, namespace string) [
 func (r *JobRunner) SyncRealm(ctx context.Context, realm *v1alpha1.Realm, export *RealmExport, scheme *runtime.Scheme) error {
 	logger := log.FromContext(ctx)
 	realmName := realm.Spec.RealmName
+	realmResourceName := realm.Name
 	namespace := realm.Namespace
 
 	payload, err := json.Marshal(export)
@@ -70,13 +72,17 @@ func (r *JobRunner) SyncRealm(ctx context.Context, realm *v1alpha1.Realm, export
 		return fmt.Errorf("failed to marshal realm export: %w", err)
 	}
 
-	secretName := fmt.Sprintf("kc-config-%s", realmName)
-	jobName := fmt.Sprintf("kc-config-job-%s", realmName)
+	secretName := fmt.Sprintf("kc-config-%s", realmResourceName)
+	jobName := fmt.Sprintf("kc-config-job-%s", realmResourceName)
 
 	var existingSecret corev1.Secret
 	err = r.Client.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, &existingSecret)
-	
+
 	secretExists := err == nil
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to get config secret: %w", err)
+	}
+
 	if secretExists {
 		// Compare existing payload. If identical, we have nothing to do!
 		if string(existingSecret.Data["realm.json"]) == string(payload) {
@@ -87,27 +93,31 @@ func (r *JobRunner) SyncRealm(ctx context.Context, realm *v1alpha1.Realm, export
 
 	logger.Info("Configuration drift detected, syncing...", "realm", realmName)
 
-	// Create or Update Secret
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      secretName,
-			Namespace: namespace,
-			Labels:    map[string]string{"app": labelApp},
-		},
-		Data: map[string][]byte{
-			"realm.json": payload,
-		},
-	}
-
-	if err := controllerutil.SetControllerReference(realm, secret, scheme); err != nil {
-		return fmt.Errorf("failed to set secret owner reference: %w", err)
-	}
-
 	if secretExists {
-		if err := r.Client.Update(ctx, secret); err != nil {
+		existingSecret.Labels = map[string]string{"app": labelApp}
+		existingSecret.Data = map[string][]byte{
+			"realm.json": payload,
+		}
+		if err := controllerutil.SetControllerReference(realm, &existingSecret, scheme); err != nil {
+			return fmt.Errorf("failed to set secret owner reference: %w", err)
+		}
+		if err := r.Client.Update(ctx, &existingSecret); err != nil {
 			return fmt.Errorf("failed to update config secret: %w", err)
 		}
 	} else {
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: namespace,
+				Labels:    map[string]string{"app": labelApp},
+			},
+			Data: map[string][]byte{
+				"realm.json": payload,
+			},
+		}
+		if err := controllerutil.SetControllerReference(realm, secret, scheme); err != nil {
+			return fmt.Errorf("failed to set secret owner reference: %w", err)
+		}
 		if err := r.Client.Create(ctx, secret); err != nil {
 			return fmt.Errorf("failed to create config secret: %w", err)
 		}
@@ -124,7 +134,7 @@ func (r *JobRunner) SyncRealm(ctx context.Context, realm *v1alpha1.Realm, export
 
 	// Spawn new Job
 	backoffLimit := int32(2)
-	
+
 	image := r.ConfigCLIImage
 	if image == "" {
 		return fmt.Errorf("config-cli image not configured (set CONFIG_CLI_IMAGE)")
@@ -150,8 +160,9 @@ func (r *JobRunner) SyncRealm(ctx context.Context, realm *v1alpha1.Realm, export
 					Labels: map[string]string{"app": labelApp},
 				},
 				Spec: corev1.PodSpec{
-					RestartPolicy:    corev1.RestartPolicyNever,
-					ImagePullSecrets: pullSecrets,
+					RestartPolicy:                corev1.RestartPolicyNever,
+					AutomountServiceAccountToken: ptrBool(false),
+					ImagePullSecrets:             pullSecrets,
 					Containers: []corev1.Container{
 						{
 							Name:  "config-cli",
@@ -192,6 +203,12 @@ func (r *JobRunner) SyncRealm(ctx context.Context, realm *v1alpha1.Realm, export
 								RunAsNonRoot:             ptrBool(true),
 								RunAsUser:                ptrInt64(1000),
 								ReadOnlyRootFilesystem:   ptrBool(false),
+								SeccompProfile: &corev1.SeccompProfile{
+									Type: corev1.SeccompProfileTypeRuntimeDefault,
+								},
+								Capabilities: &corev1.Capabilities{
+									Drop: []corev1.Capability{"ALL"},
+								},
 							},
 						},
 					},
