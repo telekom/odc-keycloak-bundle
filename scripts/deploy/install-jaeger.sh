@@ -7,7 +7,7 @@
 #   Deploys the Jaeger all-in-one image (in-memory, no persistence) into a
 #   dedicated "observability" namespace. Exposes the Jaeger UI and OTLP
 #   ingestion endpoints (gRPC and HTTP) via a ClusterIP Service.
-#   Intended for CI pipelines and ephemeral dev clusters only â€” trace data
+#   Intended for CI pipelines and ephemeral dev clusters only — trace data
 #   is lost when the pod restarts.
 #
 # USAGE:
@@ -24,9 +24,9 @@
 #   - Namespace "observability"
 #   - Deployment "jaeger" in namespace "observability"
 #   - Service "jaeger" in namespace "observability" (ClusterIP)
-#     * port 16686 â€” Jaeger UI
-#     * port 4317  â€” OTLP gRPC ingestion
-#     * port 4318  â€” OTLP HTTP ingestion
+#     * port 16686 — Jaeger UI
+#     * port 4317  — OTLP gRPC ingestion
+#     * port 4318  — OTLP HTTP ingestion
 #
 # NOTES:
 #   - No persistence: all trace data is held in memory and lost on pod restart

@@ -95,7 +95,10 @@ fi
 
 info ""
 info "── 3/4 User CRD (depends on Group) ───────────────────────"
-apply_fixture "secret-ci-test-user-password.yaml"
+kubectl create secret generic ci-test-user-password \
+    -n "${NAMESPACE}" \
+    --from-literal=password="${CI_TEST_USER_PASSWORD:-$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20)}" \
+    --dry-run=client -o yaml | kubectl apply -f -
 apply_fixture "user-ci-test-user.yaml"
 info "User '${USERNAME}' applied with group '${GROUP_NAME}'."
 wait_for_reconcile "${REALM_NAME}" || true

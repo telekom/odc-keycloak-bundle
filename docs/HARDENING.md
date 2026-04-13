@@ -111,7 +111,7 @@ guidance for Keycloak deployments.
 | Control | Status | Notes |
 |---------|--------|-------|
 | TLS termination | ⚠️ Deviation | `KC_HTTP_ENABLED=true` and `KC_HOSTNAME_STRICT=false` are set for CI and dev cluster compatibility. In production, TLS should terminate at the ingress with HTTP disabled inside the cluster, or `KC_HTTPS_*` configured with a certificate. |
-| Admin credential rotation | ⚠️ Deviation | The bootstrap admin secret is static in `keycloak-secret.yaml`. Production deployments should rotate via external secret management or use a one-time bootstrap flow. |
+| Admin credential rotation | ⚠️ Deviation | Bootstrap credentials are stored in the `keycloak-admin` secret. For production, provision and rotate this secret via external secret management or a one-time bootstrap flow. |
 | Structured logging | ✅ Applied | `KC_LOG_FORMAT=json` enables structured log output compatible with log aggregation pipelines. |
 | Metrics and health endpoints | ✅ Applied | `KC_HEALTH_ENABLED=true` and `KC_METRICS_ENABLED=true`; management port (9000) is not exposed externally via the Service. |
 | Session clustering | ✅ Applied | `KC_CACHE_STACK=kubernetes` enables Infinispan KUBE_PING for HA session sharing across replicas. |

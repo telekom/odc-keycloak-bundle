@@ -43,7 +43,15 @@ check_file() {
         failed=1
     fi
 
-    if ! grep -q "\- ALL" "$file"; then
+    if ! awk '
+        /^[[:space:]]*capabilities:[[:space:]]*$/ {in_cap=1; next}
+        in_cap && /^[[:space:]]*drop:[[:space:]]*\[[^]]*ALL[^]]*\][[:space:]]*$/ {found=1; exit}
+        in_cap && /^[[:space:]]*drop:[[:space:]]*$/ {in_drop=1; next}
+        in_drop && /^[[:space:]]*-[[:space:]]*ALL([[:space:]]|$)/ {found=1; exit}
+        in_cap && /^[[:space:]]*[a-zA-Z0-9_-]+:[[:space:]]*/ && $1 !~ /^drop:/ {in_drop=0}
+        in_cap && /^[^[:space:]]/ {in_cap=0; in_drop=0}
+        END {exit(found ? 0 : 1)}
+    ' "$file"; then
         warn "$label: missing 'capabilities.drop: [ALL]'"
         failed=1
     fi
