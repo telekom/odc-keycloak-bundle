@@ -62,8 +62,10 @@ func (r *IdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	if err := r.sync(ctx, &obj); err != nil {
 		log.Error(err, "sync failed", "alias", obj.Spec.Alias)
 		r.Recorder.Eventf(&obj, corev1.EventTypeWarning, "SyncFailed", "Failed to delegate sync: %v", err)
-		setFailed(&obj.Status.CommonStatus, err.Error())
-		if err2 := r.Status().Update(ctx, &obj); err2 != nil {
+		err2 := UpdateStatusWithRetry(ctx, r.Client, req.NamespacedName, &obj, func(latest *v1alpha1.IdentityProvider) {
+			setFailed(&latest.Status.CommonStatus, err.Error())
+		})
+		if err2 != nil {
 			log.Error(err2, "failed to update status")
 		}
 		return ctrl.Result{RequeueAfter: requeueDelay}, nil

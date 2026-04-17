@@ -11,6 +11,10 @@ spec:
   enabled: true
   protocol: openid-connect
   publicClient: false
+  standardFlowEnabled: true        # Authorization Code Flow (OIDC)
+  directAccessGrantsEnabled: false  # Resource Owner Password Credentials
+  implicitFlowEnabled: false        # Implicit Flow (legacy, avoid)
+  serviceAccountsEnabled: false     # Client Credentials Grant
   redirectUris:
     - "https://poc.example.com/*"
     - "http://localhost:8080/*"

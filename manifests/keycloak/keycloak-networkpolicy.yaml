@@ -1,0 +1,45 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-ingress
+  labels:
+    app: keycloak
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow HTTP/HTTPS from the Keycloak operator (cross-namespace)
+    # and from config-cli jobs spawned in this namespace.
+    # If you add an Ingress Controller, add a namespaceSelector for it here.
+    - from:
+        - podSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak-operator
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8443
+    # Allow Prometheus scraping on the management port.
+    # The prometheus-operator labels StatefulSet pods with "prometheus: <cr-name>".
+    - from:
+        - podSelector:
+            matchLabels:
+              prometheus: keycloak
+      ports:
+        - protocol: TCP
+          port: 9000
+    # Allow Infinispan/JGroups clustering traffic only from other Keycloak instances
+    - from:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        - protocol: TCP
+          port: 7800
+        - protocol: UDP
+          port: 7800

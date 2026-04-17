@@ -7,6 +7,9 @@ metadata:
   name: keycloak-db-restore
   namespace: keycloak-prod
 spec:
+  # imageName must match the source cluster's PostgreSQL version to avoid
+  # restore failures due to major-version mismatches.
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.3
   instances: 1
   bootstrap:
     recovery:

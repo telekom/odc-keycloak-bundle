@@ -59,7 +59,11 @@ spec:
                 type: string
               description:
                 type: string
+              directAccessGrantsEnabled:
+                type: boolean
               enabled:
+                type: boolean
+              implicitFlowEnabled:
                 type: boolean
               name:
                 type: string
@@ -73,6 +77,10 @@ spec:
                 items:
                   type: string
                 type: array
+              serviceAccountsEnabled:
+                type: boolean
+              standardFlowEnabled:
+                type: boolean
               webOrigins:
                 items:
                   type: string

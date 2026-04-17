@@ -181,6 +181,17 @@ run_live_restore_smoke() {
     fail "Restore target cluster already exists in namespace ${NAMESPACE}: ${TARGET_CLUSTER_NAME}. Use --restore-cluster-name to provide a unique name."
   fi
 
+  # Extract imageName from the source cluster so the restore cluster uses the
+  # same PostgreSQL version.  Without this, CNPG falls back to its built-in
+  # default which may be a different major/minor version.
+  local source_image
+  source_image="$(kubectl get "clusters.postgresql.cnpg.io/${CLUSTER_NAME}" -n "$NAMESPACE" -o jsonpath='{.spec.imageName}' 2>/dev/null || true)"
+  if [[ -z "$source_image" ]]; then
+    log "WARNING: could not determine imageName from source cluster ${CLUSTER_NAME}, restore cluster will use CNPG default image"
+  else
+    log "Using source cluster imageName for restore: ${source_image}"
+  fi
+
   local manifest
   manifest="$(mktemp)"
 
@@ -191,6 +202,7 @@ metadata:
   name: ${TARGET_CLUSTER_NAME}
   namespace: ${NAMESPACE}
 spec:
+${source_image:+  imageName: ${source_image}}
   instances: 1
   bootstrap:
     recovery:

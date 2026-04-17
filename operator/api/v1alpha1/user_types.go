@@ -7,16 +7,22 @@ import (
 
 type UserSpec struct {
 	// +kubebuilder:validation:Required
-	RealmRef        string                  `json:"realmRef"`
+	RealmRef string `json:"realmRef"`
 	// +kubebuilder:validation:Required
-	Username        string                  `json:"username"`
-	Email           string                  `json:"email,omitempty"`
-	FirstName       string                  `json:"firstName,omitempty"`
-	LastName        string                  `json:"lastName,omitempty"`
-	Enabled         *bool                   `json:"enabled,omitempty"`
-	EmailVerified   *bool                   `json:"emailVerified,omitempty"`
-	Groups          []string                `json:"groups,omitempty"`
-	InitialPassword *InitialPasswordRef     `json:"initialPassword,omitempty"`
+	Username      string   `json:"username"`
+	Email         string   `json:"email,omitempty"`
+	FirstName     string   `json:"firstName,omitempty"`
+	LastName      string   `json:"lastName,omitempty"`
+	Enabled       *bool    `json:"enabled,omitempty"`
+	EmailVerified *bool    `json:"emailVerified,omitempty"`
+	Groups        []string `json:"groups,omitempty"`
+	// +optional
+	Attributes map[string][]string `json:"attributes,omitempty"`
+	// +optional
+	RealmRoles []string `json:"realmRoles,omitempty"`
+	// +optional
+	ClientRoles     map[string][]string `json:"clientRoles,omitempty"`
+	InitialPassword *InitialPasswordRef `json:"initialPassword,omitempty"`
 }
 
 type InitialPasswordRef struct {
@@ -74,6 +80,24 @@ func (in *UserSpec) DeepCopyInto(out *UserSpec) {
 	if in.Groups != nil {
 		out.Groups = make([]string, len(in.Groups))
 		copy(out.Groups, in.Groups)
+	}
+	if in.Attributes != nil {
+		out.Attributes = make(map[string][]string, len(in.Attributes))
+		for k, v := range in.Attributes {
+			out.Attributes[k] = make([]string, len(v))
+			copy(out.Attributes[k], v)
+		}
+	}
+	if in.RealmRoles != nil {
+		out.RealmRoles = make([]string, len(in.RealmRoles))
+		copy(out.RealmRoles, in.RealmRoles)
+	}
+	if in.ClientRoles != nil {
+		out.ClientRoles = make(map[string][]string, len(in.ClientRoles))
+		for k, v := range in.ClientRoles {
+			out.ClientRoles[k] = make([]string, len(v))
+			copy(out.ClientRoles[k], v)
+		}
 	}
 	if in.InitialPassword != nil {
 		pw := *in.InitialPassword

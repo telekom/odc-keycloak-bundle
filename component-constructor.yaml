@@ -20,7 +20,7 @@ resources:
     relation: local
     access:
       type: ociArtifact
-      imageReference: quay.io/keycloak/keycloak:26.5.5
+      imageReference: quay.io/keycloak/keycloak:26.6.1@sha256:26ae26445475f7fac5f90ee138b1bdb64324f5815fb16133ffdbdb122d97c4d8
 
   # PostgreSQL image
   - name: postgres-image
@@ -29,7 +29,7 @@ resources:
     relation: local
     access:
       type: ociArtifact
-      imageReference: ghcr.io/cloudnative-pg/postgresql:18.3
+      imageReference: ghcr.io/cloudnative-pg/postgresql:18.3@sha256:36f19b80864f5ae23bb6ce87166e413154bf8c1b705e893ec8360ebb4791e63e
 
   # CloudNativePG operator image
   - name: cnpg-operator-image
@@ -38,7 +38,7 @@ resources:
     relation: local
     access:
       type: ociArtifact
-      imageReference: ghcr.io/cloudnative-pg/cloudnative-pg:1.28.1
+      imageReference: ghcr.io/cloudnative-pg/cloudnative-pg:1.29.0@sha256:68074486205a33ed41928761e22ad48278c690feebe8316727a1c6b3380f9e5e
 
   # Prometheus Operator image
   - name: prometheus-operator-image
@@ -47,7 +47,16 @@ resources:
     relation: local
     access:
       type: ociArtifact
-      imageReference: quay.io/prometheus-operator/prometheus-operator:v0.80.1
+      imageReference: quay.io/prometheus-operator/prometheus-operator:v0.90.1@sha256:52a6a92d915ea2fa94314748d99db7a94922e3fe63274f6182fc033b9126b573
+
+  # Config CLI image
+  - name: keycloak-config-cli-image
+    type: ociImage
+    version: "26"
+    relation: local
+    access:
+      type: ociArtifact
+      imageReference: quay.io/adorsys/keycloak-config-cli:latest-26@sha256:2d2a0663cf324379d9ffab896db8d00293cd0326151968b319cf166f6eec8fca
 
   # Realm CRD
   - name: realm-crd

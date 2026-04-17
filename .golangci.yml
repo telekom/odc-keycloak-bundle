@@ -1,0 +1,33 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - errname
+    - gosec
+    - misspell
+    - unconvert
+    - unparam
+  settings:
+    gosec:
+      excludes:
+        - G101 # Look for hardcoded credentials
+        - G204 # Audit use of command execution
+        - G306 # Poor file permissions used when writing to a file
+    staticcheck:
+      checks: ["all", "-ST1000", "-ST1003", "-ST1005", "-ST1016"]
+  exclusions:
+    generated: lax
+    presets: [comments, common-false-positives, legacy, std-error-handling]
+    warn-unused: true
+
+formatters:
+  enable: [gofmt]
+  exclusions:
+    generated: lax

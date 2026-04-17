@@ -54,11 +54,21 @@ spec:
             properties:
               accessTokenLifespan:
                 type: integer
+              accountTheme:
+                type: string
+              adminTheme:
+                type: string
               bruteForceProtected:
                 type: boolean
+              defaultLocale:
+                type: string
               displayName:
                 type: string
+              emailTheme:
+                type: string
               enabled:
+                type: boolean
+              internationalizationEnabled:
                 type: boolean
               loginTheme:
                 type: string
@@ -68,6 +78,16 @@ spec:
                 type: boolean
               resetPasswordAllowed:
                 type: boolean
+              sslRequired:
+                enum:
+                - none
+                - external
+                - all
+                type: string
+              supportedLocales:
+                items:
+                  type: string
+                type: array
             required:
             - realmName
             type: object

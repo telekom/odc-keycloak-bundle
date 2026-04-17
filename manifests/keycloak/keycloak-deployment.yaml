@@ -25,7 +25,7 @@ spec:
         fsGroup: 1000
       initContainers:
         - name: wait-for-db
-          image: busybox:1.37
+          image: busybox:1.37@sha256:1487d0af5f52b4ba31c7e465126ee2123fe3f2305d638e7827681e7cf6c83d5e
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -48,7 +48,7 @@ spec:
             capabilities:
               drop:
                 - ALL
-          image: quay.io/keycloak/keycloak:26.5.5
+          image: quay.io/keycloak/keycloak:26.6.1@sha256:26ae26445475f7fac5f90ee138b1bdb64324f5815fb16133ffdbdb122d97c4d8
           args:
             - start
           ports:

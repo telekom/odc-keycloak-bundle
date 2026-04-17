@@ -11,3 +11,12 @@ spec:
   resetPasswordAllowed: true
   bruteForceProtected: true
   accessTokenLifespan: 300
+  sslRequired: "external"
+  accountTheme: "keycloak"
+  adminTheme: "keycloak"
+  emailTheme: "keycloak"
+  internationalizationEnabled: true
+  supportedLocales:
+    - "en"
+    - "de"
+  defaultLocale: "en"

@@ -14,7 +14,18 @@ type RealmSpec struct {
 	ResetPasswordAllowed *bool  `json:"resetPasswordAllowed,omitempty"`
 	BruteForceProtected  *bool  `json:"bruteForceProtected,omitempty"`
 	LoginTheme           string `json:"loginTheme,omitempty"`
-	AccessTokenLifespan  *int   `json:"accessTokenLifespan,omitempty"`
+	AccountTheme         string `json:"accountTheme,omitempty"`
+	AdminTheme           string `json:"adminTheme,omitempty"`
+	EmailTheme           string `json:"emailTheme,omitempty"`
+	// +kubebuilder:validation:Enum=none;external;all
+	SslRequired string `json:"sslRequired,omitempty"`
+	// +optional
+	InternationalizationEnabled *bool `json:"internationalizationEnabled,omitempty"`
+	// +optional
+	SupportedLocales []string `json:"supportedLocales,omitempty"`
+	// +optional
+	DefaultLocale       string `json:"defaultLocale,omitempty"`
+	AccessTokenLifespan *int   `json:"accessTokenLifespan,omitempty"`
 }
 
 type RealmStatus struct {
@@ -65,6 +76,11 @@ func (in *RealmSpec) DeepCopyInto(out *RealmSpec) {
 	copyBoolPtr(&in.RegistrationAllowed, &out.RegistrationAllowed)
 	copyBoolPtr(&in.ResetPasswordAllowed, &out.ResetPasswordAllowed)
 	copyBoolPtr(&in.BruteForceProtected, &out.BruteForceProtected)
+	copyBoolPtr(&in.InternationalizationEnabled, &out.InternationalizationEnabled)
+	if in.SupportedLocales != nil {
+		out.SupportedLocales = make([]string, len(in.SupportedLocales))
+		copy(out.SupportedLocales, in.SupportedLocales)
+	}
 	if in.AccessTokenLifespan != nil {
 		x := *in.AccessTokenLifespan
 		out.AccessTokenLifespan = &x

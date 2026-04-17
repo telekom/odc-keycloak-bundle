@@ -34,7 +34,7 @@ func main() {
 
 	keycloakURL := getEnv("KEYCLOAK_URL", "http://keycloak:8080")
 	keycloakUser := getEnv("KEYCLOAK_USER", "admin")
-	
+
 	// Admin password comes from a Secret for STIG compliance
 	adminSecretName := getEnv("KEYCLOAK_ADMIN_SECRET_NAME", "keycloak-admin-creds")
 	adminSecretKey := getEnv("KEYCLOAK_ADMIN_SECRET_KEY", "password")
@@ -84,10 +84,10 @@ func main() {
 	configCLIImage := getEnv("CONFIG_CLI_IMAGE", "")
 
 	runner := &wrapper.JobRunner{
-		Client:         mgr.GetClient(),
-		APIReader:      mgr.GetAPIReader(),
-		URL:            keycloakURL,
-		User:           keycloakUser,
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		URL:       keycloakURL,
+		User:      keycloakUser,
 		PasswordSecret: &corev1.SecretKeySelector{
 			LocalObjectReference: corev1.LocalObjectReference{Name: adminSecretName},
 			Key:                  adminSecretKey,
@@ -99,7 +99,7 @@ func main() {
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
 		Runner:        runner,
-		Recorder:      mgr.GetEventRecorderFor("keycloak-realm-controller"),
+		Recorder:      mgr.GetEventRecorderFor("keycloak-realm-controller"), //nolint:staticcheck
 		CheckInterval: checkInterval,
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller", "controller", "Realm")
@@ -109,7 +109,7 @@ func main() {
 	if err := (&controller.ClientScopeReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("keycloak-clientscope-controller"),
+		Recorder:      mgr.GetEventRecorderFor("keycloak-clientscope-controller"), //nolint:staticcheck
 		CheckInterval: checkInterval,
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller", "controller", "ClientScope")
@@ -119,7 +119,7 @@ func main() {
 	if err := (&controller.GroupReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("keycloak-group-controller"),
+		Recorder:      mgr.GetEventRecorderFor("keycloak-group-controller"), //nolint:staticcheck
 		CheckInterval: checkInterval,
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller", "controller", "Group")
@@ -129,7 +129,7 @@ func main() {
 	if err := (&controller.ClientReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("keycloak-client-controller"),
+		Recorder:      mgr.GetEventRecorderFor("keycloak-client-controller"), //nolint:staticcheck
 		CheckInterval: checkInterval,
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller", "controller", "Client")
@@ -139,7 +139,7 @@ func main() {
 	if err := (&controller.UserReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("keycloak-user-controller"),
+		Recorder:      mgr.GetEventRecorderFor("keycloak-user-controller"), //nolint:staticcheck
 		CheckInterval: checkInterval,
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller", "controller", "User")
@@ -149,7 +149,7 @@ func main() {
 	if err := (&controller.AuthFlowReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("keycloak-authflow-controller"),
+		Recorder:      mgr.GetEventRecorderFor("keycloak-authflow-controller"), //nolint:staticcheck
 		CheckInterval: checkInterval,
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller", "controller", "AuthFlow")
@@ -159,7 +159,7 @@ func main() {
 	if err := (&controller.IdentityProviderReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("keycloak-identityprovider-controller"),
+		Recorder:      mgr.GetEventRecorderFor("keycloak-identityprovider-controller"), //nolint:staticcheck
 		CheckInterval: checkInterval,
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller", "controller", "IdentityProvider")

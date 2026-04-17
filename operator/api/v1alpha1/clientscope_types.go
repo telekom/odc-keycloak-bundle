@@ -7,7 +7,7 @@ import (
 
 type ClientScopeSpec struct {
 	// +kubebuilder:validation:Required
-	RealmRef    string            `json:"realmRef"`
+	RealmRef string `json:"realmRef"`
 	// +kubebuilder:validation:Required
 	Name        string            `json:"name"`
 	Protocol    string            `json:"protocol,omitempty"`

@@ -71,6 +71,8 @@ spec:
           name: keycloak-db
           namespace: "{{ .spec.namespace }}"
         spec:
+          # renovate: datasource=docker
+          imageName: ghcr.io/cloudnative-pg/postgresql:18.3@sha256:36f19b80864f5ae23bb6ce87166e413154bf8c1b705e893ec8360ebb4791e63e
           instances: "{{ .spec.dbInstances }}"
           storage:
             size: "{{ .spec.dbStorageSize }}"
@@ -135,7 +137,7 @@ spec:
               serviceAccountName: keycloak
               containers:
                 - name: keycloak
-                  image: quay.io/keycloak/keycloak:26.5.5
+                  image: quay.io/keycloak/keycloak:26.6.1@sha256:26ae26445475f7fac5f90ee138b1bdb64324f5815fb16133ffdbdb122d97c4d8
                   args:
                     - start
                   ports:

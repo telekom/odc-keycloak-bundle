@@ -68,8 +68,10 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if err := r.sync(ctx, &obj); err != nil {
 		log.Error(err, "sync failed", "clientId", obj.Spec.ClientID)
 		r.Recorder.Eventf(&obj, corev1.EventTypeWarning, "SyncFailed", "Failed to delegate sync: %v", err)
-		setFailed(&obj.Status.CommonStatus, err.Error())
-		if err2 := r.Status().Update(ctx, &obj); err2 != nil {
+		err2 := UpdateStatusWithRetry(ctx, r.Client, req.NamespacedName, &obj, func(latest *v1alpha1.Client) {
+			setFailed(&latest.Status.CommonStatus, err.Error())
+		})
+		if err2 != nil {
 			log.Error(err2, "failed to update status")
 		}
 		return ctrl.Result{RequeueAfter: requeueDelay}, nil

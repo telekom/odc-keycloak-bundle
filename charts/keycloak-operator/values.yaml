@@ -34,8 +34,6 @@ affinity: {}
 # Operator configuration
 operator:
   logLevel: info
-  # Watch all namespaces or specific ones
-  watchNamespaces: ""
   configCliImage:
     # Image to use for the configuration Job
     repository: quay.io/adorsys/keycloak-config-cli

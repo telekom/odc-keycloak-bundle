@@ -11,19 +11,19 @@ type IdentityProviderSpec struct {
 	// +kubebuilder:validation:Required
 	RealmRef string `json:"realmRef,omitempty"`
 	// +kubebuilder:validation:Required
-	Alias    string `json:"alias"`
-	
+	Alias string `json:"alias"`
+
 	// Type must be strictly "oidc" or "saml"
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Enum=oidc;saml
 	Type string `json:"type"`
 
-	Enabled      bool   `json:"enabled,omitempty"`
-	DisplayName  string `json:"displayName,omitempty"`
-	StoreToken   bool   `json:"storeToken,omitempty"`
-	AddReadTokenRoleOnCreate bool `json:"addReadTokenRoleOnCreate,omitempty"`
-	TrustEmail   bool   `json:"trustEmail,omitempty"`
-	LinkOnly     bool   `json:"linkOnly,omitempty"`
+	Enabled                   bool   `json:"enabled,omitempty"`
+	DisplayName               string `json:"displayName,omitempty"`
+	StoreToken                bool   `json:"storeToken,omitempty"`
+	AddReadTokenRoleOnCreate  bool   `json:"addReadTokenRoleOnCreate,omitempty"`
+	TrustEmail                bool   `json:"trustEmail,omitempty"`
+	LinkOnly                  bool   `json:"linkOnly,omitempty"`
 	FirstBrokerLoginFlowAlias string `json:"firstBrokerLoginFlowAlias,omitempty"`
 	PostBrokerLoginFlowAlias  string `json:"postBrokerLoginFlowAlias,omitempty"`
 
@@ -152,4 +152,3 @@ func (in *IdentityProviderSpec) DeepCopy() *IdentityProviderSpec {
 	in.DeepCopyInto(out)
 	return out
 }
-

@@ -55,6 +55,18 @@ spec:
             type: object
           spec:
             properties:
+              attributes:
+                additionalProperties:
+                  items:
+                    type: string
+                  type: array
+                type: object
+              clientRoles:
+                additionalProperties:
+                  items:
+                    type: string
+                  type: array
+                type: object
               email:
                 type: string
               emailVerified:
@@ -80,6 +92,10 @@ spec:
                 type: string
               realmRef:
                 type: string
+              realmRoles:
+                items:
+                  type: string
+                type: array
               username:
                 type: string
             required:

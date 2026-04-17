@@ -17,10 +17,10 @@ jobs:
     name: CVE Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Scan manifests for misconfigurations
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: config
           scan-ref: .
@@ -30,10 +30,10 @@ jobs:
 
       - name: Scan Keycloak image for CVEs
         if: success() || failure()
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: image
-          image-ref: quay.io/keycloak/keycloak:26.5.5
+          image-ref: quay.io/keycloak/keycloak:26.6.1@sha256:26ae26445475f7fac5f90ee138b1bdb64324f5815fb16133ffdbdb122d97c4d8
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -41,10 +41,10 @@ jobs:
 
       - name: Scan PostgreSQL image for CVEs
         if: success() || failure()
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: image
-          image-ref: ghcr.io/cloudnative-pg/postgresql:18.3
+          image-ref: ghcr.io/cloudnative-pg/postgresql:18.3@sha256:36f19b80864f5ae23bb6ce87166e413154bf8c1b705e893ec8360ebb4791e63e
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -52,10 +52,10 @@ jobs:
 
       - name: Scan CNPG Operator image for CVEs
         if: success() || failure()
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: image
-          image-ref: ghcr.io/cloudnative-pg/cloudnative-pg:1.28.1
+          image-ref: ghcr.io/cloudnative-pg/cloudnative-pg:1.29.0@sha256:68074486205a33ed41928761e22ad48278c690feebe8316727a1c6b3380f9e5e
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -63,10 +63,32 @@ jobs:
 
       - name: Scan Keycloak Operator image for CVEs
         if: success() || failure()
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: image
           image-ref: ghcr.io/${{ github.repository_owner }}/keycloak-operator:latest
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+
+      - name: Scan Prometheus Operator image for CVEs
+        if: success() || failure()
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          scan-type: image
+          image-ref: quay.io/prometheus-operator/prometheus-operator:v0.90.1@sha256:52a6a92d915ea2fa94314748d99db7a94922e3fe63274f6182fc033b9126b573
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+
+      - name: Scan Keycloak Config CLI image for CVEs
+        if: success() || failure()
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          scan-type: image
+          image-ref: quay.io/adorsys/keycloak-config-cli:latest-26@sha256:2d2a0663cf324379d9ffab896db8d00293cd0326151968b319cf166f6eec8fca
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true

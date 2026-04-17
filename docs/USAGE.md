@@ -88,6 +88,15 @@ spec:
   resetPasswordAllowed: true
   bruteForceProtected: true
   accessTokenLifespan: 300     # seconds
+  sslRequired: external
+  accountTheme: keycloak
+  adminTheme: keycloak
+  emailTheme: keycloak
+  internationalizationEnabled: true
+  supportedLocales:
+    - en
+    - de
+  defaultLocale: en
 ```
 
 ```bash
@@ -98,6 +107,30 @@ kubectl get Realms -n keycloak-dev
 ```
 
 > `realmName` is the Keycloak realm ID used as the identifier in all API calls. Do not change it after creation — the operator will attempt to create a second realm rather than rename the existing one.
+
+### Spec Fields (Realm)
+
+| Field | Type | Description |
+|---|---|---|
+| `realmName` | string | Unique identifier for the realm. |
+| `displayName` | string | Human-readable name. |
+| `enabled` | boolean | Whether the realm is active. |
+| `sslRequired` | string | SSL requirement level: `all`, `external`, `none`. |
+| `registrationAllowed` | boolean | If users can register themselves. |
+| `resetPasswordAllowed`| boolean | If users can use the "Forgot Password" flow. |
+| `bruteForceProtected` | boolean | Enables brute-force detection logic. |
+| `loginTheme` | string | Theme used for login pages. |
+| `accountTheme` | string | Theme used for the user account console. |
+| `adminTheme` | string | Theme used for the admin console. |
+| `emailTheme` | string | Theme used for system emails. |
+| `internationalizationEnabled` | boolean | Enables multi-language support. |
+| `supportedLocales` | string[] | List of enabled language codes (e.g. `["en", "de"]`). |
+| `defaultLocale` | string | Default language for the realm. |
+| `accessTokenLifespan` | integer | Default lifespan for access tokens in seconds. |
+
+> [!TIP]
+> **Drift Healing:** All spec fields are strictly enforced. If a user changes the theme or SSL settings via the Keycloak UI, the operator will automatically revert those changes to the state defined in your CRD during the next reconciliation cycle (default every 5 minutes).
+
 
 > Deleting a `Realm` CR does **not** delete the realm from Keycloak — the realm is intentionally preserved to protect existing users and sessions. Remove it manually via the Keycloak Admin Console if needed.
 
@@ -220,10 +253,38 @@ spec:
   emailVerified: false
   groups:
     - developers            # resolved to group ID at sync time
+  attributes:
+    department: ["engineering"]
+  realmRoles:
+    - offline_access
+  clientRoles:
+    account: ["view-profile", "manage-account"]
   initialPassword:
     secretName: jane-doe-initial-password
     secretKey: password     # default key name
 ```
+
+### Spec Fields (User)
+
+| Field | Type | Description |
+|---|---|---|
+| `realmRef` | string | Reference to the management realm. |
+| `username` | string | Unique login name. |
+| `email` | string | User email address. |
+| `firstName` | string | User's first name. |
+| `lastName` | string | User's last name. |
+| `enabled` | boolean | Whether the user account is active. |
+| `emailVerified` | boolean | Marks email as verified without requiring the flow. |
+| `groups` | string[] | List of group names to join. |
+| `attributes` | map[string]string[] | Custom metadata for the user profile. |
+| `realmRoles` | string[] | List of realm-level roles to assign. |
+| `clientRoles` | map[string]string[] | Map of client-id to roles to assign. |
+| `initialPassword.secretName` | string | Name of the secret containing the password. |
+| `initialPassword.secretKey` | string | Key within the secret. |
+
+> [!TIP]
+> **Declarative Roles & Attributes:** Unlike groups, **roles** and **attributes** defined in the CRD are strictly reconciled. Manual additions or deletions in the Keycloak UI will be overwritten by the operator.
+
 
 Create the initial password Secret before applying the user CR:
 

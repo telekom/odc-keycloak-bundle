@@ -111,7 +111,7 @@ guidance for Keycloak deployments.
 | Control | Status | Notes |
 |---------|--------|-------|
 | TLS termination | ⚠️ Deviation | `KC_HTTP_ENABLED=true` and `KC_HOSTNAME_STRICT=false` are set for CI and dev cluster compatibility. In production, TLS should terminate at the ingress with HTTP disabled inside the cluster, or `KC_HTTPS_*` configured with a certificate. |
-| Admin credential rotation | ⚠️ Deviation | The bootstrap admin secret is static in `keycloak-secret.yaml`. Production deployments should rotate via external secret management or use a one-time bootstrap flow. |
+| Admin credential rotation | ⚠️ Deviation | Bootstrap credentials are stored in the `keycloak-admin` secret. For production, provision and rotate this secret via external secret management or a one-time bootstrap flow. |
 | Structured logging | ✅ Applied | `KC_LOG_FORMAT=json` enables structured log output compatible with log aggregation pipelines. |
 | Metrics and health endpoints | ✅ Applied | `KC_HEALTH_ENABLED=true` and `KC_METRICS_ENABLED=true`; management port (9000) is not exposed externally via the Service. |
 | Session clustering | ✅ Applied | `KC_CACHE_STACK=kubernetes` enables Infinispan KUBE_PING for HA session sharing across replicas. |
@@ -128,3 +128,4 @@ guidance for Keycloak deployments.
 | 4 | CIS K8s 5.4.2 | No external secret store | Dev/CI scope; Kubernetes Secrets are baseline |
 | 5 | Keycloak TLS | HTTP enabled, strict hostname disabled | Dev/CI cluster compatibility; production requires TLS at ingress |
 | 6 | Seccomp on Keycloak server | `seccompProfile` not set | Upstream image compatibility; `RuntimeDefault` recommended for production |
+| 7 | CIS K8s 5.2.6 | `readOnlyRootFilesystem: false` on config-cli Job | keycloak-config-cli writes temporary import state to local disk during realm sync |

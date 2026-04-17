@@ -29,9 +29,10 @@ clean: ## Clean local binary tools.
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate ClusterRole and CustomResourceDefinition objects.
+manifests: controller-gen ## Generate Role and CustomResourceDefinition objects.
 	cd operator && $(CONTROLLER_GEN) rbac:roleName=manager-role crd paths="./api/v1alpha1/...;./internal/controller/..." output:rbac:artifacts:config=$(OPERATOR_RBAC_OUT) output:crd:artifacts:config=$(CHART_CRD_OUT)
 	cd operator && $(CONTROLLER_GEN) rbac:roleName=manager-role paths="./api/v1alpha1/...;./internal/controller/..." output:rbac:artifacts:config=$(CHART_RBAC_OUT)
+	sed -i -e 's/kind: ClusterRole/kind: Role/g' $(CHART_RBAC_DIR)/role.yaml operator/$(OPERATOR_RBAC_OUT)/role.yaml
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.

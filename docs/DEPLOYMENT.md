@@ -29,6 +29,14 @@ Extract resources                                   PostgreSQL Cluster
 
 The component is published to an OCI registry by the CI/CD pipeline (see [CICD.md](CICD.md)). On the target environment, download and inspect it using the OCM CLI.
 
+> **Air-Gapped Deployment:** If deploying into a disconnected/air-gapped environment, use the `ocm transfer component` command to mirror the entire bundle—including all nested OCI images and Helm charts—to your internal registry. 
+> ```bash
+> ocm transfer component --copy-resources \
+>   ghcr.io/opendefensecloud/keycloak-bundle//opendefense.cloud/keycloak-bundle:0.2.0 \
+>   your-internal-registry.local/mirror/keycloak-bundle
+> ```
+> Afterward, target your internal registry for the subsequent steps.
+
 ### Inspect the Component
 
 ```bash
@@ -240,15 +248,21 @@ CNPG creates a `keycloak-db-app` secret with auto-generated database credentials
 kubectl apply -n "$NAMESPACE" -f manifests/keycloak/
 ```
 
-This deploys the Keycloak server, its ClusterIP service on port 8080, and a `keycloak-admin` secret with default credentials (`admin`/`admin`). The deployment includes an init container that blocks until PostgreSQL is reachable.
+This deploys the Keycloak server and its ClusterIP service on port 8080. The deployment expects a `keycloak-admin` secret for bootstrap credentials; the helper script `scripts/deploy/deploy-keycloak.sh` creates it automatically when missing (using `KEYCLOAK_ADMIN_USERNAME`/`KEYCLOAK_ADMIN_PASSWORD` or a generated random password).
 
-> **Note:** Replace the default admin credentials before any non-development deployment.
+> **Note:** In production, provision `keycloak-admin` out-of-band via your secret management flow and rotate credentials regularly.
 
 Wait for Keycloak:
 
 ```bash
 kubectl wait -n "$NAMESPACE" --for=condition=ready pod \
   -l app=keycloak --timeout=300s
+```
+
+If the helper script generated a random password, you can retrieve it from the Kubernetes secret via:
+
+```bash
+kubectl get secret keycloak-admin -n "$NAMESPACE" -o jsonpath='{.data.KEYCLOAK_ADMIN_PASSWORD}' | base64 -d
 ```
 
 ### Step 4: Access the Instance

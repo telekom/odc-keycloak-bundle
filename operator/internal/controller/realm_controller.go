@@ -62,8 +62,10 @@ func (r *RealmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if err := r.sync(ctx, &obj); err != nil {
 		log.Error(err, "sync failed", "realmName", obj.Spec.RealmName)
 		r.Recorder.Eventf(&obj, corev1.EventTypeWarning, "SyncFailed", "Failed to sync Realm config via Config-CLI: %v", err)
-		setFailed(&obj.Status.CommonStatus, err.Error())
-		if err2 := r.Status().Update(ctx, &obj); err2 != nil {
+		err2 := UpdateStatusWithRetry(ctx, r.Client, req.NamespacedName, &obj, func(latest *v1alpha1.Realm) {
+			setFailed(&latest.Status.CommonStatus, err.Error())
+		})
+		if err2 != nil {
 			log.Error(err2, "failed to update status")
 		}
 		return ctrl.Result{RequeueAfter: requeueDelay}, nil
@@ -90,11 +92,11 @@ func (r *RealmReconciler) sync(ctx context.Context, obj *v1alpha1.Realm) error {
 	if obj.Annotations != nil {
 		if _, ok := obj.Annotations[SyncRequestedAnnotation]; ok {
 			if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-				if err := r.Client.Get(ctx, types.NamespacedName{Name: obj.Name, Namespace: obj.Namespace}, obj); err != nil {
+				if err := r.Get(ctx, types.NamespacedName{Name: obj.Name, Namespace: obj.Namespace}, obj); err != nil {
 					return err
 				}
 				delete(obj.Annotations, SyncRequestedAnnotation)
-				return r.Client.Update(ctx, obj)
+				return r.Update(ctx, obj)
 			}); err != nil {
 				return err
 			}
@@ -105,8 +107,9 @@ func (r *RealmReconciler) sync(ctx context.Context, obj *v1alpha1.Realm) error {
 	}
 
 	r.Recorder.Eventf(obj, corev1.EventTypeNormal, "SyncSuccessful", "Successfully synchronized full Keycloak Realm '%s'", realmName)
-	setReady(&obj.Status.CommonStatus, realmName, "Synced successfully")
-	return r.Status().Update(ctx, obj)
+	return UpdateStatusWithRetry(ctx, r.Client, types.NamespacedName{Name: obj.Name, Namespace: obj.Namespace}, obj, func(latest *v1alpha1.Realm) {
+		setReady(&latest.Status.CommonStatus, realmName, "Synced successfully")
+	})
 }
 
 func (r *RealmReconciler) SetupWithManager(mgr ctrl.Manager) error {

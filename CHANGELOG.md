@@ -6,7 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased]
+## [0.2.1-final]
+
+### Security
+
+- **Hardcoded default admin credentials removed** — `keycloak-secret.yaml` with static `admin/admin` credentials deleted; the deploy script now creates the `keycloak-admin` secret dynamically, using `KEYCLOAK_ADMIN_PASSWORD` if set or a generated random password otherwise.
+- **Operator RBAC scoped to namespace** — the operator's `ClusterRole` replaced by a namespace-scoped `Role`, reducing blast radius to the deployment namespace.
+- **NetworkPolicy added** — new `keycloak-networkpolicy.yaml` restricts ingress to Keycloak pods: HTTP/HTTPS limited to same-namespace pods and the operator namespace, the management port limited to Prometheus pods, and Infinispan clustering limited to peer Keycloak pods.
+- **All OCI image references SHA-pinned** — Keycloak, PostgreSQL, CloudNativePG, BusyBox, and the operator base images are now pinned by digest in manifests, `component-constructor.yaml`, KRO RGD, and the operator `Dockerfile`.
+- **GitHub Actions SHA-pinned** — all third-party actions pinned by commit SHA to prevent supply-chain substitution.
+
+### Changed
+
+- **Image versions updated** — Keycloak 26.5.5 → 26.6.1, CloudNativePG operator 1.28.1 → 1.29.0, Prometheus Operator v0.80.1 → v0.90.1.
+- **Go and Kubernetes dependencies updated** — Go 1.23 → 1.26, `k8s.io/*` 0.31 → 0.35, `controller-runtime` 0.19 → 0.23.
+- **golangci-lint configuration upgraded** to v2 format with additional linters (`gosec`, `bodyclose`, `errname`, `misspell`, `unconvert`, `unparam`) and `gofmt` formatting enforcement.
+- **CI workflows consolidated** — standalone `golangci-lint.yml` and `operator-tests.yml` removed; lint and unit tests integrated into the main `ci.yml` pipeline.
+- **Renovate configured for digest pinning** — `pinDigests: true` enabled globally; regex managers extended with `autoReplaceStringTemplate` to maintain digest pins on automated updates.
+- **Secret update logic corrected** — the operator now mutates the existing config secret in-place (preserving `ResourceVersion`) rather than constructing a replacement object, avoiding conflict errors under concurrent reconciliation.
+- **Deployment documentation updated** — air-gapped transfer instructions added; admin credential handling revised to reflect dynamic secret creation.
+
+---
+
+## [0.2.0-final]
 
 ### Added
 

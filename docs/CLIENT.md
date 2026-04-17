@@ -121,6 +121,12 @@ Separate controllers remain the finalized architectural standard to ensure:
 
 Previously, the operator contained defensive Go code to filter out invalid Custom Resources (e.g. missing Client IDs) before triggering keycloak-config-cli. This was replaced by strict `kubebuilder` markers (`Required`, `Enum`). This shifts validation left: invalid configurations are rejected directly during PR checks (`kubectl apply` or ArgoCD dry-runs) rather than failing silently or causing reconciliation deadlocks in production.
 
+### Full State Declarative Parity & Drift-Healing (2026-04-17)
+
+*Decision: Extend Realm, Client, and User CRDs to include all security-critical and UI-exposed attributes (e.g., OAuth Flows, Themes, SSL).*
+
+Manual UI changes to Keycloak attributes like "Standard Flow" or "Login Theme" were previously not rectified by the operator because they lacked representation in the CRD schemas and the export builder. By adding these fields explicitly to the CRDs and the `keycloak-config-cli` JSON mapping, the operator now ensures 100% declarative enforcement (Drift-Healing) for the most commonly manipulated UI settings. This ensures architectural integrity and auditability in air-gapped environments.
+
 ## Related Documents
 
 | Topic | Document |

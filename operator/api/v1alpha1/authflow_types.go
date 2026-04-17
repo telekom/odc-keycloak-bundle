@@ -9,7 +9,7 @@ import (
 
 type AuthFlowSpec struct {
 	// +kubebuilder:validation:Required
-	RealmRef    string `json:"realmRef,omitempty"`
+	RealmRef string `json:"realmRef,omitempty"`
 	// +kubebuilder:validation:Required
 	Alias       string `json:"alias"`
 	Description string `json:"description,omitempty"`

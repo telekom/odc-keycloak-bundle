@@ -1,6 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
+  "pinDigests": true,
   "packageRules": [
     {
       "description": "Automerge patch updates for all dependencies",
@@ -18,6 +19,24 @@
       "matchPackageNames": ["quay.io/keycloak/keycloak"],
       "groupName": "keycloak",
       "labels": ["dependencies", "keycloak"]
+    },
+    {
+      "description": "Group all Prometheus Operator updates",
+      "matchPackageNames": ["quay.io/prometheus-operator/prometheus-operator"],
+      "groupName": "prometheus",
+      "labels": ["dependencies", "prometheus"]
+    },
+    {
+      "description": "Group Keycloak Config CLI updates",
+      "matchPackageNames": ["quay.io/adorsys/keycloak-config-cli"],
+      "groupName": "keycloak-config-cli",
+      "labels": ["dependencies", "keycloak-config-cli"]
+    },
+    {
+      "description": "Group all Go version updates together",
+      "matchPackageNames": ["go", "golang"],
+      "groupName": "go-toolchain",
+      "labels": ["dependencies", "go"]
     },
     {
       "description": "Group all CloudNativePG updates",
@@ -39,10 +58,16 @@
       "matchManagers": ["github-actions"],
       "groupName": "github-actions",
       "labels": ["dependencies", "ci"]
+    },
+    {
+      "description": "Prevent Renovate from confusing golangci-lint binary with the action SHA",
+      "matchPackageNames": ["golangci/golangci-lint"],
+      "matchManagers": ["github-actions"],
+      "enabled": false
     }
   ],
   "kubernetes": {
-    "fileMatch": ["^manifests/.*\\.yaml$", "^kro/.*\\.yaml$"]
+    "fileMatch": ["^manifests/.*\\.yaml$", "^kro/.*\\.yaml$", "^examples/.*\\.yaml$"]
   },
   "helm-values": {
     "fileMatch": ["^charts/.*/values\\.yaml$"]
@@ -51,10 +76,11 @@
     {
       "customType": "regex",
       "description": "Update OCI image references in component-constructor.yaml",
-      "fileMatch": ["^component-constructor\\.yaml$"],
+      "fileMatch": ["component-constructor\\.yaml$"],
       "matchStrings": [
-        "imageReference:\\s*(?<depName>\\S+):(?<currentValue>\\S+)"
+        "imageReference:\\s*[\"']?(?<depName>[^\\s:\"']+):(?<currentValue>[^@\\s'\"/]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?[\"']?"
       ],
+      "autoReplaceStringTemplate": "imageReference: {{{depName}}}:{{{newValue}}}{{#if newDigest}}@{{{newDigest}}}{{/if}}",
       "datasourceTemplate": "docker"
     },
     {
@@ -62,8 +88,9 @@
       "description": "Parse image-ref in GitHub Actions for Trivy scans",
       "fileMatch": ["^\\.github/workflows/.*\\.ya?ml$"],
       "matchStrings": [
-        "image-ref:\\s*(?<depName>[^\\s:]+):(?<currentValue>\\S+)"
+        "image-ref:\\s*(?<depName>[^\\s:]+):(?<currentValue>[^@\\s'\"]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?"
       ],
+      "autoReplaceStringTemplate": "image-ref: {{{depName}}}:{{{newValue}}}{{#if newDigest}}@{{{newDigest}}}{{/if}}",
       "datasourceTemplate": "docker"
     },
     {
@@ -83,6 +110,26 @@
       "matchStrings": [
         "(?:#|//)\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*[A-Z0-9_]+\\s*[:=]\\s*[\"']?(?<currentValue>[^\"'\\s]+)[\"']?"
       ]
+    },
+    {
+      "customType": "regex",
+      "description": "Parse CNPG imageName in CRDs for updates and digest pinning",
+      "fileMatch": ["^kro/.*\\.yaml$", "^examples/.*\\.yaml$"],
+      "matchStrings": [
+        "imageName:\\s*(?<depName>[^\\s:]+):(?<currentValue>[^@\\s'\"]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?"
+      ],
+      "autoReplaceStringTemplate": "imageName: {{{depName}}}:{{{newValue}}}{{#if newDigest}}@{{{newDigest}}}{{/if}}",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Update golangci-lint binary version in GitHub Actions",
+      "fileMatch": ["^\\.github/workflows/.*\\.ya?ml$"],
+      "matchStrings": [
+        "version:\\s*(?<currentValue>v?\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "golangci/golangci-lint",
+      "datasourceTemplate": "github-releases"
     }
   ]
 }

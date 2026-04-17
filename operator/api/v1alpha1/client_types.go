@@ -7,16 +7,24 @@ import (
 
 type ClientSpec struct {
 	// +kubebuilder:validation:Required
-	RealmRef     string   `json:"realmRef,omitempty"`
+	RealmRef string `json:"realmRef,omitempty"`
 	// +kubebuilder:validation:Required
-	ClientID     string   `json:"clientId"`
-	Name         string   `json:"name,omitempty"`
-	Description  string   `json:"description,omitempty"`
-	Enabled      *bool    `json:"enabled,omitempty"`
-	Protocol     string   `json:"protocol,omitempty"`
-	PublicClient *bool    `json:"publicClient,omitempty"`
-	RedirectUris []string `json:"redirectUris,omitempty"`
-	WebOrigins   []string `json:"webOrigins,omitempty"`
+	ClientID     string `json:"clientId"`
+	Name         string `json:"name,omitempty"`
+	Description  string `json:"description,omitempty"`
+	Enabled      *bool  `json:"enabled,omitempty"`
+	Protocol     string `json:"protocol,omitempty"`
+	PublicClient *bool  `json:"publicClient,omitempty"`
+	// +optional
+	StandardFlowEnabled *bool `json:"standardFlowEnabled,omitempty"`
+	// +optional
+	ImplicitFlowEnabled *bool `json:"implicitFlowEnabled,omitempty"`
+	// +optional
+	DirectAccessGrantsEnabled *bool `json:"directAccessGrantsEnabled,omitempty"`
+	// +optional
+	ServiceAccountsEnabled *bool    `json:"serviceAccountsEnabled,omitempty"`
+	RedirectUris           []string `json:"redirectUris,omitempty"`
+	WebOrigins             []string `json:"webOrigins,omitempty"`
 }
 
 type ClientStatus struct {
@@ -66,6 +74,10 @@ func (in *ClientSpec) DeepCopyInto(out *ClientSpec) {
 	*out = *in
 	copyBoolPtr(&in.Enabled, &out.Enabled)
 	copyBoolPtr(&in.PublicClient, &out.PublicClient)
+	copyBoolPtr(&in.StandardFlowEnabled, &out.StandardFlowEnabled)
+	copyBoolPtr(&in.ImplicitFlowEnabled, &out.ImplicitFlowEnabled)
+	copyBoolPtr(&in.DirectAccessGrantsEnabled, &out.DirectAccessGrantsEnabled)
+	copyBoolPtr(&in.ServiceAccountsEnabled, &out.ServiceAccountsEnabled)
 	if in.RedirectUris != nil {
 		out.RedirectUris = make([]string, len(in.RedirectUris))
 		copy(out.RedirectUris, in.RedirectUris)

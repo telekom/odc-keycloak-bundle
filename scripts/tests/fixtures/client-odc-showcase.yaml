@@ -10,6 +10,10 @@ spec:
   enabled: true
   protocol: openid-connect
   publicClient: false
+  standardFlowEnabled: true
+  directAccessGrantsEnabled: false
+  implicitFlowEnabled: false
+  serviceAccountsEnabled: false
   redirectUris:
     - https://poc.example.com/*
     - http://localhost:8080/*

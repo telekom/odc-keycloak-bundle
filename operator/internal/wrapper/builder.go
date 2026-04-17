@@ -11,43 +11,57 @@ import (
 )
 
 type RealmExport struct {
-	Realm                string                `json:"realm"`
-	DisplayName          string                `json:"displayName,omitempty"`
-	Enabled              *bool                 `json:"enabled,omitempty"`
-	RegistrationAllowed  *bool                 `json:"registrationAllowed,omitempty"`
-	ResetPasswordAllowed *bool                 `json:"resetPasswordAllowed,omitempty"`
-	BruteForceProtected  *bool                 `json:"bruteForceProtected,omitempty"`
-	LoginTheme           string                `json:"loginTheme,omitempty"`
-	AccessTokenLifespan  *int                  `json:"accessTokenLifespan,omitempty"`
-	Clients              []ClientExport        `json:"clients"`
-	Users                []UserExport          `json:"users"`
-	Groups               []GroupExport         `json:"groups"`
-	ClientScopes         []ClientScopeExport   `json:"clientScopes"`
-	AuthenticationFlows  []AuthFlowExport      `json:"authenticationFlows"`
-	IdentityProviders    []IdentityProviderExport `json:"identityProviders"`
+	Realm                       string                   `json:"realm"`
+	DisplayName                 string                   `json:"displayName,omitempty"`
+	Enabled                     *bool                    `json:"enabled,omitempty"`
+	RegistrationAllowed         *bool                    `json:"registrationAllowed,omitempty"`
+	ResetPasswordAllowed        *bool                    `json:"resetPasswordAllowed,omitempty"`
+	BruteForceProtected         *bool                    `json:"bruteForceProtected,omitempty"`
+	LoginTheme                  string                   `json:"loginTheme,omitempty"`
+	AccountTheme                string                   `json:"accountTheme,omitempty"`
+	AdminTheme                  string                   `json:"adminTheme,omitempty"`
+	EmailTheme                  string                   `json:"emailTheme,omitempty"`
+	SslRequired                 string                   `json:"sslRequired,omitempty"`
+	InternationalizationEnabled *bool                    `json:"internationalizationEnabled,omitempty"`
+	SupportedLocales            []string                 `json:"supportedLocales,omitempty"`
+	DefaultLocale               string                   `json:"defaultLocale,omitempty"`
+	AccessTokenLifespan         *int                     `json:"accessTokenLifespan,omitempty"`
+	Clients                     []ClientExport           `json:"clients"`
+	Users                       []UserExport             `json:"users"`
+	Groups                      []GroupExport            `json:"groups"`
+	ClientScopes                []ClientScopeExport      `json:"clientScopes"`
+	AuthenticationFlows         []AuthFlowExport         `json:"authenticationFlows"`
+	IdentityProviders           []IdentityProviderExport `json:"identityProviders"`
 }
 
 type ClientExport struct {
-	ClientId     string   `json:"clientId"`
-	Name         string   `json:"name,omitempty"`
-	Description  string   `json:"description,omitempty"`
-	Enabled      *bool    `json:"enabled,omitempty"`
-	Protocol     string   `json:"protocol,omitempty"`
-	PublicClient *bool    `json:"publicClient,omitempty"`
-	Secret       string   `json:"secret,omitempty"`
-	RedirectUris []string `json:"redirectUris,omitempty"`
-	WebOrigins   []string `json:"webOrigins,omitempty"`
+	ClientId                  string   `json:"clientId"`
+	Name                      string   `json:"name,omitempty"`
+	Description               string   `json:"description,omitempty"`
+	Enabled                   *bool    `json:"enabled,omitempty"`
+	Protocol                  string   `json:"protocol,omitempty"`
+	PublicClient              *bool    `json:"publicClient,omitempty"`
+	StandardFlowEnabled       *bool    `json:"standardFlowEnabled,omitempty"`
+	ImplicitFlowEnabled       *bool    `json:"implicitFlowEnabled,omitempty"`
+	DirectAccessGrantsEnabled *bool    `json:"directAccessGrantsEnabled,omitempty"`
+	ServiceAccountsEnabled    *bool    `json:"serviceAccountsEnabled,omitempty"`
+	Secret                    string   `json:"secret,omitempty"`
+	RedirectUris              []string `json:"redirectUris,omitempty"`
+	WebOrigins                []string `json:"webOrigins,omitempty"`
 }
 
 type UserExport struct {
-	Username      string             `json:"username"`
-	Email         string             `json:"email,omitempty"`
-	FirstName     string             `json:"firstName,omitempty"`
-	LastName      string             `json:"lastName,omitempty"`
-	Enabled       *bool              `json:"enabled,omitempty"`
-	EmailVerified *bool              `json:"emailVerified,omitempty"`
-	Groups        []string           `json:"groups,omitempty"`
-	Credentials   []CredentialExport `json:"credentials,omitempty"`
+	Username      string              `json:"username"`
+	Email         string              `json:"email,omitempty"`
+	FirstName     string              `json:"firstName,omitempty"`
+	LastName      string              `json:"lastName,omitempty"`
+	Enabled       *bool               `json:"enabled,omitempty"`
+	EmailVerified *bool               `json:"emailVerified,omitempty"`
+	Groups        []string            `json:"groups,omitempty"`
+	Attributes    map[string][]string `json:"attributes,omitempty"`
+	RealmRoles    []string            `json:"realmRoles,omitempty"`
+	ClientRoles   map[string][]string `json:"clientRoles,omitempty"`
+	Credentials   []CredentialExport  `json:"credentials,omitempty"`
 }
 
 type CredentialExport struct {
@@ -107,20 +121,27 @@ func BuildRealmExport(ctx context.Context, c client.Client, namespace string, re
 	}
 
 	export := &RealmExport{
-		Realm:                realmName,
-		DisplayName:          realm.Spec.DisplayName,
-		Enabled:              realm.Spec.Enabled,
-		RegistrationAllowed:  realm.Spec.RegistrationAllowed,
-		ResetPasswordAllowed: realm.Spec.ResetPasswordAllowed,
-		BruteForceProtected:  realm.Spec.BruteForceProtected,
-		LoginTheme:           realm.Spec.LoginTheme,
-		AccessTokenLifespan:  realm.Spec.AccessTokenLifespan,
-		Clients:              []ClientExport{},
-		Users:                []UserExport{},
-		Groups:               []GroupExport{},
-		ClientScopes:         []ClientScopeExport{},
-		AuthenticationFlows:  []AuthFlowExport{},
-		IdentityProviders:    []IdentityProviderExport{},
+		Realm:                       realmName,
+		DisplayName:                 realm.Spec.DisplayName,
+		Enabled:                     realm.Spec.Enabled,
+		RegistrationAllowed:         realm.Spec.RegistrationAllowed,
+		ResetPasswordAllowed:        realm.Spec.ResetPasswordAllowed,
+		BruteForceProtected:         realm.Spec.BruteForceProtected,
+		LoginTheme:                  realm.Spec.LoginTheme,
+		SslRequired:                 realm.Spec.SslRequired,
+		AccountTheme:                realm.Spec.AccountTheme,
+		AdminTheme:                  realm.Spec.AdminTheme,
+		EmailTheme:                  realm.Spec.EmailTheme,
+		InternationalizationEnabled: realm.Spec.InternationalizationEnabled,
+		SupportedLocales:            realm.Spec.SupportedLocales,
+		DefaultLocale:               realm.Spec.DefaultLocale,
+		AccessTokenLifespan:         realm.Spec.AccessTokenLifespan,
+		Clients:                     []ClientExport{},
+		Users:                       []UserExport{},
+		Groups:                      []GroupExport{},
+		ClientScopes:                []ClientScopeExport{},
+		AuthenticationFlows:         []AuthFlowExport{},
+		IdentityProviders:           []IdentityProviderExport{},
 	}
 
 	// 1. Clients
@@ -132,14 +153,18 @@ func BuildRealmExport(ctx context.Context, c client.Client, namespace string, re
 			}
 			if getRealmRef(item.Spec.RealmRef) == realmName {
 				cEx := ClientExport{
-					ClientId:     item.Spec.ClientID,
-					Name:         item.Spec.Name,
-					Description:  item.Spec.Description,
-					Enabled:      item.Spec.Enabled,
-					Protocol:     item.Spec.Protocol,
-					PublicClient: item.Spec.PublicClient,
-					RedirectUris: item.Spec.RedirectUris,
-					WebOrigins:   item.Spec.WebOrigins,
+					ClientId:                  item.Spec.ClientID,
+					Name:                      item.Spec.Name,
+					Description:               item.Spec.Description,
+					Enabled:                   item.Spec.Enabled,
+					Protocol:                  item.Spec.Protocol,
+					PublicClient:              item.Spec.PublicClient,
+					StandardFlowEnabled:       item.Spec.StandardFlowEnabled,
+					ImplicitFlowEnabled:       item.Spec.ImplicitFlowEnabled,
+					DirectAccessGrantsEnabled: item.Spec.DirectAccessGrantsEnabled,
+					ServiceAccountsEnabled:    item.Spec.ServiceAccountsEnabled,
+					RedirectUris:              item.Spec.RedirectUris,
+					WebOrigins:                item.Spec.WebOrigins,
 				}
 
 				if item.Spec.PublicClient == nil || !*item.Spec.PublicClient {
@@ -208,6 +233,9 @@ func BuildRealmExport(ctx context.Context, c client.Client, namespace string, re
 					Enabled:       item.Spec.Enabled,
 					EmailVerified: item.Spec.EmailVerified,
 					Groups:        item.Spec.Groups,
+					Attributes:    item.Spec.Attributes,
+					RealmRoles:    item.Spec.RealmRoles,
+					ClientRoles:   item.Spec.ClientRoles,
 				}
 
 				if item.Spec.InitialPassword != nil {
@@ -247,7 +275,7 @@ func BuildRealmExport(ctx context.Context, c client.Client, namespace string, re
 					TopLevel:    item.Spec.TopLevel,
 					BuiltIn:     false,
 				}
-				
+
 				// Translate Defense Profile Toggles to executions
 				flowEx.AuthenticationExecutions = append(flowEx.AuthenticationExecutions, AuthExecutionExport{
 					Authenticator: "auth-username-password-form",
@@ -289,7 +317,7 @@ func BuildRealmExport(ctx context.Context, c client.Client, namespace string, re
 					PostBrokerLoginFlowAlias:  item.Spec.PostBrokerLoginFlowAlias,
 					Config:                    make(map[string]string),
 				}
-				
+
 				// Copy static config
 				for k, v := range item.Spec.Config {
 					idpEx.Config[k] = v
@@ -330,11 +358,4 @@ func getRealmRef(ref string) string {
 		return "master"
 	}
 	return ref
-}
-
-func ptrToInt(p *int, def int) int {
-	if p == nil {
-		return def
-	}
-	return *p
 }

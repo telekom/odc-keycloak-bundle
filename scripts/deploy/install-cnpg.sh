@@ -36,7 +36,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../utils/common.sh"
 
-CNPG_VERSION="${1:-1.28.1}"
+CNPG_VERSION="${1:-1.29.0}"
 CNPG_MINOR="${CNPG_VERSION%.*}"   # e.g. 1.28.1 -> 1.28
 
 info "Installing CloudNativePG operator v${CNPG_VERSION}..."

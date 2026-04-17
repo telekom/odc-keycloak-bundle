@@ -23,7 +23,7 @@
 # CREATES:
 #   - Deployment "keycloak"
 #   - Service "keycloak" (ports 8080, 8443)
-#   - Secret "keycloak-admin" (admin credentials)
+#   - Secret "keycloak-admin" (admin credentials, if missing)
 #
 # CALLED BY:
 #   deploy-all.sh
@@ -47,6 +47,22 @@ info "Deploying Keycloak to namespace: $NAMESPACE"
 # Check if PostgreSQL secret exists (created by CloudNativePG)
 if ! kubectl get secret keycloak-db-app -n "$NAMESPACE" &>/dev/null; then
     fail "PostgreSQL not ready. Secret 'keycloak-db-app' not found. Run: ./scripts/deploy-postgres.sh $NAMESPACE" 1
+fi
+
+# Ensure Keycloak admin credentials secret exists
+if ! kubectl get secret keycloak-admin -n "$NAMESPACE" &>/dev/null; then
+    ADMIN_USER="${KEYCLOAK_ADMIN_USERNAME:-admin}"
+    ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24)}"
+
+    info "Creating secret 'keycloak-admin' in namespace '$NAMESPACE'..."
+    kubectl create secret generic keycloak-admin -n "$NAMESPACE" \
+        --from-literal=KEYCLOAK_ADMIN="$ADMIN_USER" \
+        --from-literal=KEYCLOAK_ADMIN_PASSWORD="$ADMIN_PASS" || fail "Failed to create admin secret" 2
+
+    if [[ -z "${KEYCLOAK_ADMIN_PASSWORD:-}" ]]; then
+        warn "Generated random admin password (not printed). Retrieve it with:"
+        warn "kubectl get secret keycloak-admin -n $NAMESPACE -o jsonpath='{.data.KEYCLOAK_ADMIN_PASSWORD}' | base64 -d"
+    fi
 fi
 
 # Apply Keycloak manifests
