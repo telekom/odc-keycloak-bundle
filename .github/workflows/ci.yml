@@ -11,13 +11,13 @@
 #   2. Build Operator Image
 #      - go vet ./... (operator/)
 #      - docker build & push to GHCR
-#        Tags: sha-<short> always; latest on main branch
+#        Tags: sha-<commit-sha> always; 0.3.0 and latest only from non-dev repos on main
 #
 #   3. Build OCM
 #      - Create component archive (scripts/ocm/ocm-create.sh)
 #      - Sign & Validate archive (scripts/ocm/ocm-sign.sh, scripts/ocm/ocm-validate.sh)
 #
-#   Jobs 2 and 3 run in parallel after job 1.
+#   Job 3 waits for Job 2 because the OCM component records the operator image digest.
 #
 #   4. Transfer (if enabled)
 #      - Push component to OCI registry (scripts/ocm/ocm-transfer.sh)
@@ -94,16 +94,20 @@ permissions:
 env:
   INSTANCE_NAME: "cicd"
   NAMESPACE: "keycloak-cicd"
-  OPERATOR_IMAGE: "ghcr.io/${{ github.repository_owner }}/keycloak-operator"
+  RELEASE_VERSION: "0.3.0"
+  OCM_REGISTRY: ${{ vars.OCM_REGISTRY || secrets.OCM_REGISTRY || format('ghcr.io/{0}', github.repository_owner) }}
+  OPERATOR_IMAGE: "${{ vars.OCM_REGISTRY || secrets.OCM_REGISTRY || format('ghcr.io/{0}', github.repository_owner) }}/${{ github.ref == 'refs/heads/main' && !endsWith(github.event.repository.name, '-dev') && (github.event_name != 'workflow_dispatch' || inputs.checkout_ref == '') && 'keycloak-operator' || 'keycloak-operator-dev' }}" # yamllint disable-line rule:line-length
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   # renovate: datasource=github-releases depName=open-component-model/ocm
   OCM_CLI_VERSION: "v0.39.0"
   # renovate: datasource=golang-version depName=go
-  GO_VERSION: "1.26.2"
+  GO_VERSION: "1.26.4"
   # renovate: datasource=github-releases depName=gitleaks/gitleaks
   GITLEAKS_VERSION: "8.30.1"
   # renovate: datasource=github-releases depName=anchore/syft
   SYFT_VERSION: "1.42.4"
+  # renovate: datasource=github-releases depName=mvdan/sh
+  SHFMT_VERSION: "3.9.0"
 
 jobs:
   # ── 0. PR Privileged Verify Gate ───────────────────────────────────
@@ -173,6 +177,20 @@ jobs:
           ls -1 scripts/**/*.sh
           shellcheck -S warning scripts/**/*.sh
 
+      - name: Lint Dockerfile
+        id: hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: operator/Dockerfile
+          failure-threshold: warning
+
+      - name: shfmt format check
+        id: shfmt
+        run: |
+          curl -sSfL "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_amd64" \
+            -o /usr/local/bin/shfmt && chmod +x /usr/local/bin/shfmt
+          shfmt -l -d -i 4 -ci scripts/
+
       - name: Gitleaks (Secrets Scan)
         id: gitleaks
         run: |
@@ -198,6 +216,8 @@ jobs:
           echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
           echo "| YAML Lint | ${{ steps.yaml_lint.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| ShellCheck | ${{ steps.shellcheck.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Hadolint | ${{ steps.hadolint.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| shfmt | ${{ steps.shfmt.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Gitleaks | ${{ steps.gitleaks.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Non-root Security Check | ${{ steps.security_check.outcome }} |" >> $GITHUB_STEP_SUMMARY
 
@@ -228,6 +248,10 @@ jobs:
       - name: Go Test (Unit Tests)
         working-directory: operator
         run: go test ./... -v
+
+      - name: Go Test (race detector)
+        working-directory: operator
+        run: go test -race ./...
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
@@ -271,9 +295,12 @@ jobs:
         uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6
         with:
           images: ${{ env.OPERATOR_IMAGE }}
+          # yamllint disable rule:line-length
           tags: |
-            type=sha,prefix=sha-,format=short
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,format=long
+            type=raw,value=${{ env.RELEASE_VERSION }},enable=${{ github.ref == 'refs/heads/main' && !endsWith(github.event.repository.name, '-dev') && (github.event_name != 'workflow_dispatch' || inputs.checkout_ref == '') }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' && !endsWith(github.event.repository.name, '-dev') && (github.event_name != 'workflow_dispatch' || inputs.checkout_ref == '') }}
+          # yamllint enable rule:line-length
 
       - name: Set up Docker Buildx
         id: buildx
@@ -288,7 +315,34 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
+
+      - name: Scan Keycloak Operator image for CVEs
+        id: operator_cve_scan
+        if: ${{ github.event_name != 'pull_request' }}
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.OPERATOR_IMAGE }}:sha-${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+
+      - name: Report non-blocking Operator image CVEs
+        if: ${{ github.event_name != 'pull_request' && steps.operator_cve_scan.outcome == 'failure' }}
+        run: |
+          echo "::warning title=Operator image CVEs::Trivy found HIGH/CRITICAL fixable CVEs in ${{ env.OPERATOR_IMAGE }}:sha-${{ github.sha }}. The image build succeeded, but the CVE scan is currently non-blocking."
+          {
+            echo "### Operator image CVE warning"
+            echo ""
+            echo "Trivy found HIGH/CRITICAL fixable CVEs in \`${{ env.OPERATOR_IMAGE }}:sha-${{ github.sha }}\`."
+            echo ""
+            echo "The Docker build/push step succeeded. This warning comes from the non-blocking CVE scan and does not mean that the operator image failed to build."
+            echo ""
+            echo "Treat this as a release blocker before final delivery, but it does not fail this CI job."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Add Job Summary
         run: |
@@ -300,15 +354,21 @@ jobs:
           done
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "| **Push** | skipped (pull request policy) |" >> $GITHUB_STEP_SUMMARY
+          else
+            if [ "${{ steps.operator_cve_scan.outcome }}" = "failure" ]; then
+              echo "| **Operator CVE scan** | warning: HIGH/CRITICAL fixable CVEs found (non-blocking) |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| **Operator CVE scan** | passed |" >> $GITHUB_STEP_SUMMARY
+            fi
           fi
 
   # ── 3. Build OCM Package ─────────────────────────────────────────────
   build:
     name: "3. Build OCM"
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [lint, build-operator]
     environment: cicd
-    if: ${{ (always() && (needs.lint.result == 'success' || needs.lint.result == 'skipped')) && (github.event_name != 'workflow_dispatch' || inputs.run_build) }}
+    if: ${{ (always() && (needs.lint.result == 'success' || needs.lint.result == 'skipped') && needs.build-operator.result == 'success') && github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.run_build) }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -331,8 +391,21 @@ jobs:
           fi
           syft version
 
+      - name: Log in to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build OCM Component Archive
+        env:
+          CHECKOUT_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.checkout_ref || '' }}
         run: |
+          export OPERATOR_IMAGE_REF="${OPERATOR_IMAGE}:sha-${GITHUB_SHA}"
+          export SOURCE_REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          export SOURCE_REF="${CHECKOUT_REF:-$GITHUB_REF}"
+          export SOURCE_COMMIT="${GITHUB_SHA}"
           chmod +x scripts/**/*.sh
           ./scripts/ocm/ocm-create.sh
 
@@ -403,7 +476,7 @@ jobs:
     environment: cicd
     # Both build jobs must succeed for Transfer to proceed.
     # Security policy: transfer is disabled for pull_request events.
-    if: ${{ needs.build.result == 'success' && needs.build-operator.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.run_transfer) && github.event_name != 'pull_request' }}
+    if: ${{ needs.build.result == 'success' && needs.build-operator.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.run_transfer) && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !endsWith(github.event.repository.name, '-dev') && (github.event_name != 'workflow_dispatch' || inputs.checkout_ref == '') }} # yamllint disable-line rule:line-length
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -422,12 +495,11 @@ jobs:
 
       - name: Transfer Signed Component
         env:
-          # Registry must be provided via Vars or Secrets
-          OCM_REGISTRY: ${{ vars.OCM_REGISTRY || secrets.OCM_REGISTRY }}
           OCM_REGISTRY_USER: ${{ secrets.OCM_REGISTRY_USER }}
           OCM_REGISTRY_PASSWORD: ${{ secrets.OCM_REGISTRY_PASSWORD }}
           # Keep overwrite as default for release compatibility; can be switched to true later.
           OCM_TRANSFER_IMMUTABLE: ${{ vars.OCM_TRANSFER_IMMUTABLE || 'false' }}
+          OCM_TRANSFER_COPY_RESOURCES: ${{ vars.OCM_TRANSFER_COPY_RESOURCES || 'true' }}
         run: |
           chmod +x scripts/**/*.sh
           if [[ "$OCM_REGISTRY" == ghcr.io/* ]]; then
@@ -448,11 +520,12 @@ jobs:
       - name: Add Job Summary
         if: success()
         env:
-          OCM_REGISTRY: ${{ vars.OCM_REGISTRY || secrets.OCM_REGISTRY }}
           OCM_TRANSFER_IMMUTABLE: ${{ vars.OCM_TRANSFER_IMMUTABLE || 'false' }}
+          OCM_TRANSFER_COPY_RESOURCES: ${{ vars.OCM_TRANSFER_COPY_RESOURCES || 'true' }}
         run: |
-          echo "| **Transfer** | ✅ Success | Target: \`${{ env.OCM_REGISTRY }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Transfer** | ✅ Success | Target: \`${OCM_REGISTRY}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Transfer mode** | immutable=${{ env.OCM_TRANSFER_IMMUTABLE }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Resource transfer** | copy-resources=${{ env.OCM_TRANSFER_COPY_RESOURCES }} |" >> $GITHUB_STEP_SUMMARY
 
   # ── 5. Deploy + Smoke Test + Cleanup ─────────────────────────────────
   deploy:
@@ -496,12 +569,11 @@ jobs:
           OPERATOR_IMAGE_PULL_SECRET: ghcr-pull-secret
           REGISTRY_USERNAME: ${{ secrets.OCM_REGISTRY_USER || github.actor }}
           REGISTRY_PASSWORD: ${{ secrets.OCM_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+          OCM_REGISTRY_HOST: ghcr.io
           OCM_VERIFY_REQUIRED: "true"
           OCM_CTF_PATH: ocm-output/keycloak-bundle-ctf.tar.gz
           OCM_PUBLIC_KEY_PATH: security/ocm-signing-public-key.pub
         run: |
-          # Trim the tag to 7 chars to match docker/metadata-action short format
-          export OPERATOR_IMAGE_TAG="sha-${GITHUB_SHA::7}"
           chmod +x scripts/**/*.sh
           ./scripts/deploy/deploy-all.sh ${INSTANCE_NAME} --namespace ${NAMESPACE} --clean || {
             echo "Deployment failed! Fetching operator logs for debugging..."
@@ -517,8 +589,14 @@ jobs:
             -l cnpg.io/cluster=keycloak-db,cnpg.io/instanceRole=primary \
             --for=condition=Ready --timeout=120s
 
-          kubectl wait --for=condition=available deployment/keycloak \
-            -n "$NAMESPACE" --timeout=120s
+          if ! kubectl wait --for=condition=available deployment/keycloak \
+            -n "$NAMESPACE" --timeout=600s; then
+            echo "=== Keycloak deployment timed out — pod description ==="
+            kubectl describe pod -n "$NAMESPACE" -l app=keycloak || true
+            echo "=== Keycloak pod logs (last 100 lines) ==="
+            kubectl logs -n "$NAMESPACE" -l app=keycloak --tail=100 || true
+            exit 1
+          fi
 
           echo "=== Pod Status ==="
           kubectl get pods -n "$NAMESPACE" -o wide
@@ -743,4 +821,3 @@ jobs:
         if: success()
         run: |
           echo "| **Deploy** | ✅ Success | Namespace: \`${{ env.NAMESPACE }}\` |" >> $GITHUB_STEP_SUMMARY
-

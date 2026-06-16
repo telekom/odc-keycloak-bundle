@@ -68,8 +68,8 @@ timeout 300s bash -c "until kubectl get pod -n $NAMESPACE -l cnpg.io/cluster=key
 # Wait for readiness
 info "Waiting for PostgreSQL Readiness..."
 if ! kubectl wait pod -n "$NAMESPACE" \
-  -l cnpg.io/cluster=keycloak-db,cnpg.io/instanceRole=primary \
-  --for=condition=Ready --timeout=600s; then
+    -l cnpg.io/cluster=keycloak-db,cnpg.io/instanceRole=primary \
+    --for=condition=Ready --timeout=600s; then
     warn "Timeout waiting for PostgreSQL pod."
 fi
 

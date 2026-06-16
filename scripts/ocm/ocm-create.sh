@@ -43,6 +43,18 @@ PROJECT_ROOT="$(cd "$(dirname "$(dirname "$SCRIPT_DIR")")" && pwd)"
 OUTPUT_DIR="${1:-$PROJECT_ROOT/ocm-output}"
 SBOM_FILE="$PROJECT_ROOT/ocm-sbom.cdx.json"
 # Component name and version are defined in component-constructor.yaml
+OPERATOR_IMAGE_REF="${OPERATOR_IMAGE_REF:-ghcr.io/opendefensecloud/keycloak-operator:0.3.0}"
+SOURCE_REPO_URL="${SOURCE_REPO_URL:-https://github.com/opendefensecloud/keycloak-bundle.git}"
+SOURCE_REF="${SOURCE_REF:-${GITHUB_REF:-refs/heads/main}}"
+SOURCE_COMMIT="${SOURCE_COMMIT:-${GITHUB_SHA:-}}"
+export OPERATOR_IMAGE_REF
+export SOURCE_REPO_URL
+export SOURCE_REF
+export SOURCE_COMMIT
+
+if [[ -z "$SOURCE_COMMIT" ]]; then
+    fail "SOURCE_COMMIT must be set to the delivered git commit SHA" 11
+fi
 
 cleanup_temp_files() {
     rm -f "$PROJECT_ROOT/manifests.tar"
@@ -84,12 +96,12 @@ fi
 
 # Create component archive using declarative constructor
 info "Adding component version from constructor..."
-ocm add componentversions --create --file "$OUTPUT_DIR/component-archive" "component-constructor.yaml" \
-    || fail "Failed to create component archive from constructor" 2
+ocm add componentversions --create --addenv --file "$OUTPUT_DIR/component-archive" "component-constructor.yaml" ||
+    fail "Failed to create component archive from constructor" 2
 
 info "Creating CTF tarball..."
-tar -czf "$OUTPUT_DIR/keycloak-bundle-ctf.tar.gz" -C "$OUTPUT_DIR/component-archive" . \
-    || fail "Failed to create CTF tarball" 9
+tar -czf "$OUTPUT_DIR/keycloak-bundle-ctf.tar.gz" -C "$OUTPUT_DIR/component-archive" . ||
+    fail "Failed to create CTF tarball" 9
 
 info "=== OCM component archive created ==="
 info "Location: $OUTPUT_DIR/component-archive"

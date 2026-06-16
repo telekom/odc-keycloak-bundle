@@ -4,11 +4,13 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // CommonStatus is embedded in all resource status types.
 type CommonStatus struct {
-	Ready        bool               `json:"ready"`
-	KeycloakID   string             `json:"keycloakId,omitempty"`
-	Message      string             `json:"message,omitempty"`
-	LastSyncTime *metav1.Time       `json:"lastSyncTime,omitempty"`
-	Conditions   []metav1.Condition `json:"conditions,omitempty"`
+	Ready bool `json:"ready"`
+	// ObservedGeneration is the .metadata.generation the controller last reconciled.
+	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
+	KeycloakID         string             `json:"keycloakId,omitempty"`
+	Message            string             `json:"message,omitempty"`
+	LastSyncTime       *metav1.Time       `json:"lastSyncTime,omitempty"`
+	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
 
 func (in *CommonStatus) DeepCopyInto(out *CommonStatus) {

@@ -106,7 +106,7 @@ if kubectl get namespace "$NAMESPACE" &>/dev/null; then
     for resource in "${TARGET_RESOURCES[@]}"; do
         delete_all_for_resource "$resource"
     done
-    
+
     delete_all_for_resource "clusters.postgresql.cnpg.io" "120s"
 
     # CNPG resources are not part of TARGET_RESOURCES safety abort, but warn if they still exist.

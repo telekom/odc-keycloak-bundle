@@ -1,0 +1,7 @@
+title = "keycloak-bundle gitleaks config"
+
+[allowlist]
+  description = "Repository paths allowed by secret scanning"
+  paths = [
+    "security/ocm-signing-public-key.pub",
+  ]

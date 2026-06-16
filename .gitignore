@@ -24,6 +24,8 @@ ocm-output/
 manifests.tar
 
 # Secrets (never commit)
+.env
+hack/local-*
 *.key
 *.pem
 *.priv
@@ -48,3 +50,7 @@ reports/
 # Temporary
 tmp/
 temp/
+
+# sed in-place backup artifacts (macOS `sed -i -e` leaves *.yaml-e files)
+*.yaml-e
+*.yml-e

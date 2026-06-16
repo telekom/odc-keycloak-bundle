@@ -48,6 +48,20 @@ func setReady(s *v1alpha1.CommonStatus, id, msg string) {
 	}}
 }
 
+func setPending(s *v1alpha1.CommonStatus, msg string) {
+	now := metav1.Now()
+	s.Ready = false
+	s.Message = msg
+	s.LastSyncTime = &now
+	s.Conditions = []metav1.Condition{{
+		Type:               "Ready",
+		Status:             metav1.ConditionFalse,
+		LastTransitionTime: now,
+		Reason:             "JobRunning",
+		Message:            msg,
+	}}
+}
+
 func setFailed(s *v1alpha1.CommonStatus, msg string) {
 	now := metav1.Now()
 	s.Ready = false
@@ -65,12 +79,16 @@ func setFailed(s *v1alpha1.CommonStatus, msg string) {
 // requeueDelay is how long to wait before retrying after a transient error.
 const requeueDelay = 30 * time.Second
 
+// jobObserveInterval is the requeue interval while a config-cli Job is still running.
+const jobObserveInterval = 5 * time.Second
+
 const SyncRequestedAnnotation = "keycloak.opendefense.cloud/sync-requested"
 
 // TriggerRealmSync annotates the Realm to wake up the realm_controller.
 func TriggerRealmSync(ctx context.Context, c client.Client, namespace, realmName string) error {
+	// realmRef is mandatory; refuse to silently target the privileged "master" realm.
 	if realmName == "" {
-		realmName = "master"
+		return fmt.Errorf("realmRef must not be empty")
 	}
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -97,7 +115,7 @@ func IsSafelyDeletedFromRealm(ctx context.Context, c client.Client, namespace, r
 		return false, nil // Not deleting
 	}
 	if realmName == "" {
-		realmName = "master"
+		return false, fmt.Errorf("realmRef must not be empty")
 	}
 	var realm v1alpha1.Realm
 	if err := c.Get(ctx, types.NamespacedName{Name: realmName, Namespace: namespace}, &realm); err != nil {

@@ -11,6 +11,16 @@ on:
 
 permissions:
   contents: read
+  packages: read
+
+env:
+  OCM_REGISTRY: ${{ vars.OCM_REGISTRY || secrets.OCM_REGISTRY || format('ghcr.io/{0}', github.repository_owner) }}
+  KEYCLOAK_IMAGE: quay.io/keycloak/keycloak:26.6.3@sha256:5fdbf2dbb5897cc34e82de49d13e23db011f9925089dbc555fc095f2c8bc1dac
+  POSTGRES_IMAGE: ghcr.io/cloudnative-pg/postgresql:18.4@sha256:1a8ef3dc0dc214c1764660291b29a98288b13753c09e9981b86eaf0c75de8bdc
+  CNPG_OPERATOR_IMAGE: ghcr.io/cloudnative-pg/cloudnative-pg:1.29.1@sha256:0dfff19ba7b52ca25851a1010028b6940fff2e233290465af1cfb08a5f3f4661
+  PROMETHEUS_OPERATOR_IMAGE: quay.io/prometheus-operator/prometheus-operator:v0.91.0@sha256:9e53e13139218aca79ee000172de73355e9174ef2904585bfad9497fc71aae2d
+  CONFIG_CLI_IMAGE: quay.io/adorsys/keycloak-config-cli:latest-26@sha256:1b22dfaa9ae0c71f74b0342f9221a6510f272da5def683dbba26a98e6b1b1411
+  OPERATOR_IMAGE: ${{ vars.OCM_REGISTRY || secrets.OCM_REGISTRY || format('ghcr.io/{0}', github.repository_owner) }}/keycloak-operator:0.3.0 # yamllint disable-line rule:line-length
 
 jobs:
   trivy:
@@ -18,6 +28,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Log in to GHCR for release image scan
+        if: ${{ github.event_name != 'pull_request' && !endsWith(github.event.repository.name, '-dev') }}
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Scan manifests for misconfigurations
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
@@ -33,7 +51,7 @@ jobs:
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: image
-          image-ref: quay.io/keycloak/keycloak:26.6.1@sha256:26ae26445475f7fac5f90ee138b1bdb64324f5815fb16133ffdbdb122d97c4d8
+          image-ref: ${{ env.KEYCLOAK_IMAGE }}
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -44,7 +62,7 @@ jobs:
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: image
-          image-ref: ghcr.io/cloudnative-pg/postgresql:18.3@sha256:36f19b80864f5ae23bb6ce87166e413154bf8c1b705e893ec8360ebb4791e63e
+          image-ref: ${{ env.POSTGRES_IMAGE }}
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -55,18 +73,37 @@ jobs:
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: image
-          image-ref: ghcr.io/cloudnative-pg/cloudnative-pg:1.29.0@sha256:68074486205a33ed41928761e22ad48278c690feebe8316727a1c6b3380f9e5e
+          image-ref: ${{ env.CNPG_OPERATOR_IMAGE }}
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: 1
 
+      - name: Check Keycloak Operator release image
+        id: operator_release_image
+        if: ${{ (success() || failure()) && github.event_name != 'pull_request' && !endsWith(github.event.repository.name, '-dev') }}
+        run: |
+          if docker manifest inspect "${OPERATOR_IMAGE}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+          echo "::warning title=Operator release image missing::Skipping Trivy scan for ${OPERATOR_IMAGE}; the tag does not exist yet."
+          {
+            echo "### Operator release image scan skipped"
+            echo ""
+            echo "Image not found: \`${OPERATOR_IMAGE}\`"
+            echo ""
+            echo "The CI workflow scans the freshly built operator image by immutable \`sha-<commit>\` tag."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Scan Keycloak Operator image for CVEs
-        if: success() || failure()
+        if: ${{ (success() || failure()) && steps.operator_release_image.outputs.exists == 'true' }}
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: image
-          image-ref: ghcr.io/${{ github.repository_owner }}/keycloak-operator:latest
+          image-ref: ${{ env.OPERATOR_IMAGE }}
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -77,7 +114,7 @@ jobs:
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: image
-          image-ref: quay.io/prometheus-operator/prometheus-operator:v0.90.1@sha256:52a6a92d915ea2fa94314748d99db7a94922e3fe63274f6182fc033b9126b573
+          image-ref: ${{ env.PROMETHEUS_OPERATOR_IMAGE }}
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -88,7 +125,7 @@ jobs:
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: image
-          image-ref: quay.io/adorsys/keycloak-config-cli:latest-26@sha256:2d2a0663cf324379d9ffab896db8d00293cd0326151968b319cf166f6eec8fca
+          image-ref: ${{ env.CONFIG_CLI_IMAGE }}
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true

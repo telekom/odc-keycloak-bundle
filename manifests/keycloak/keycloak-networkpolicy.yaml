@@ -10,6 +10,7 @@ spec:
       app: keycloak
   policyTypes:
     - Ingress
+    - Egress
   ingress:
     # Allow HTTP/HTTPS from the Keycloak operator (cross-namespace)
     # and from config-cli jobs spawned in this namespace.
@@ -43,3 +44,50 @@ spec:
           port: 7800
         - protocol: UDP
           port: 7800
+  egress:
+    # DNS resolution (kube-dns / CoreDNS in kube-system).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # PostgreSQL database (CloudNativePG cluster "keycloak-db").
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: keycloak-db
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Infinispan/JGroups clustering to other Keycloak instances.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        - protocol: TCP
+          port: 7800
+        - protocol: UDP
+          port: 7800
+    # Kubernetes API Server (control plane).
+    # Keycloak's JGroups/Infinispan KUBE_PING protocol makes outbound HTTPS calls
+    # to the API Server (kubernetes.default.svc:443) to query pod labels in its
+    # namespace for discovery and session clustering.
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+    # OTLP tracing export to the observability namespace.
+    # Only needed when KC_TRACING_ENABLED=true; harmless otherwise.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317

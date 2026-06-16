@@ -26,6 +26,9 @@ spec:
     - jsonPath: .status.ready
       name: Ready
       type: boolean
+    - jsonPath: .status.observedGeneration
+      name: ObsGen
+      type: integer
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -73,6 +76,9 @@ spec:
               loginTheme:
                 type: string
               realmName:
+                maxLength: 255
+                minLength: 1
+                pattern: ^[a-zA-Z0-9][a-zA-Z0-9_\-.]*$
                 type: string
               registrationAllowed:
                 type: boolean
@@ -93,6 +99,10 @@ spec:
             type: object
           status:
             properties:
+              activeJobName:
+                description: ActiveJobName is the name of the most recently spawned
+                  config-cli Job.
+                type: string
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current
@@ -156,6 +166,11 @@ spec:
                 type: string
               message:
                 type: string
+              observedGeneration:
+                description: ObservedGeneration is the .metadata.generation the controller
+                  last reconciled.
+                format: int64
+                type: integer
               ready:
                 type: boolean
             required:

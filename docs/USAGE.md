@@ -21,15 +21,9 @@ CNPG-native Day-2 resources (database scope)
 └── ScheduledBackup
 ```
 
-All resources are **namespace-scoped** and must be applied to the namespace of their target Keycloak instance (e.g. `keycloak-dev`). The operator reconciles them in dependency order every cycle:
+All resources are **namespace-scoped** and must be applied to the namespace of their target Keycloak instance (e.g. `keycloak-dev`). A `Realm` CR is the reconciliation anchor: child controllers validate their own object, create any needed Kubernetes-side Secret, annotate the referenced `Realm`, and the Realm controller builds one combined `realm.json` payload for `keycloak-config-cli`.
 
-1. Realms (Must be applied first)
-2. ClientScopes
-3. Individual AuthFlows (MFA Toggles)
-4. Identity Providers
-5. Groups
-6. Clients
-7. Users (group memberships resolved after groups are synced)
+`realmRef` is mandatory for every child CR. The operator intentionally does not fall back to the privileged `master` realm when `realmRef` is missing.
 
 ---
 
@@ -44,6 +38,7 @@ sequenceDiagram
     participant CD as CI/CD / GitOps (ArgoCD)
     participant K8s as Kubernetes API
     participant Op as Keycloak Operator
+    participant Job as config-cli Job
     participant KC as Keycloak Server
     participant App as Application Pod
 
@@ -54,11 +49,14 @@ sequenceDiagram
 
     Note over K8s, KC: PLATFORM TEAM (Keycloak)
     Op->>K8s: Watch all Keycloak CRs
-    Op->>KC: REST API Create/Update
-    KC-->>Op: Success
+    Op->>K8s: Ensure client Secret for confidential clients
+    Op->>K8s: Create/Update config Secret (realm.json)
+    Op->>K8s: Spawn config-cli Job
+    Job->>KC: REST API Import (realm.json)
+    Job->>K8s: Update Job Status (Complete/Failed)
+    Op->>K8s: Update Realm status from Job result
 
-    Op->>KC: Fetch Client Secret
-    Op->>K8s: Create/Update Secret <client-id>-secret
+    Note over Op, KC: Operator does NOT call Keycloak REST directly;\nthe config-cli Job performs the import.
 
     Note over App: App Deployment
     K8s->>App: Mount Secret (envFrom: secretRef)
@@ -134,7 +132,7 @@ kubectl get Realms -n keycloak-dev
 
 > Deleting a `Realm` CR does **not** delete the realm from Keycloak — the realm is intentionally preserved to protect existing users and sessions. Remove it manually via the Keycloak Admin Console if needed.
 
-> Deleting any other CR type (`Client`, `Group`, `User`, `ClientScope`) **does** remove the corresponding resource from Keycloak. The operator uses Kubernetes finalizers to propagate the deletion before the CR is garbage-collected.
+> Deleting any other CR type (`Client`, `Group`, `User`, `ClientScope`, `AuthFlow`, `IdentityProvider`) **does** remove the corresponding resource from Keycloak. The operator uses Kubernetes finalizers to propagate the deletion through a successful Realm sync before the CR is garbage-collected.
 
 ---
 
@@ -163,6 +161,16 @@ kubectl get ClientScopes -n keycloak-dev
 # tenant-a-profile    tenant-a   profile     openid-connect  true
 ```
 
+### Spec Fields (ClientScope)
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `realmRef` | string | Yes | Name of the target `Realm` CR in the same namespace. |
+| `name` | string | Yes | Client scope name in Keycloak. |
+| `protocol` | string | No | Protocol name, typically `openid-connect`. |
+| `description` | string | No | Human-readable purpose for the scope. |
+| `attributes` | map[string]string | No | Keycloak client-scope attributes passed through to `keycloak-config-cli`. |
+
 ---
 
 ## Group
@@ -189,6 +197,16 @@ kubectl get Groups -n keycloak-dev
 # tenant-a-developers    tenant-a   developers   true
 ```
 
+### Spec Fields (Group)
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `realmRef` | string | Yes | Name of the target `Realm` CR in the same namespace. |
+| `name` | string | Yes | Group name in Keycloak. |
+| `path` | string | No | Optional Keycloak group path for nested group structures. |
+| `attributes` | map[string]string[] | No | Multi-valued group attributes. |
+| `realmRoles` | string[] | No | Realm roles assigned to the group. |
+
 ---
 
 ## Client
@@ -202,7 +220,7 @@ metadata:
   name: odc-showcase-client
   namespace: keycloak-dev
 spec:
-  realmRef: tenant-a           # defaults to "master" if omitted
+  realmRef: tenant-a           # required; no fallback to master
   clientId: odc-showcase-client
   enabled: true
   redirectUris:
@@ -218,12 +236,12 @@ env:
   - name: OIDC_CLIENT_ID
     valueFrom:
       secretKeyRef:
-        name: my-app-secret
+        name: odc-showcase-client-secret
         key: CLIENT_ID
   - name: OIDC_CLIENT_SECRET
     valueFrom:
       secretKeyRef:
-        name: my-app-secret
+        name: odc-showcase-client-secret
         key: CLIENT_SECRET
 ```
 
@@ -232,6 +250,24 @@ kubectl get Clients -n keycloak-dev
 # NAME                  REALM      CLIENTID               PROTOCOL        READY   AGE
 # odc-showcase-client   tenant-a   odc-showcase-client    openid-connect  true    2m
 ```
+
+### Spec Fields (Client)
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `realmRef` | string | Yes | Name of the target `Realm` CR in the same namespace. |
+| `clientId` | string | Yes | Keycloak client identifier. |
+| `name` | string | No | Display name. |
+| `description` | string | No | Human-readable client description. |
+| `enabled` | boolean | No | Whether the client is enabled. |
+| `protocol` | string | No | Client protocol, typically `openid-connect`. |
+| `publicClient` | boolean | No | If `true`, no client secret is generated or imported. |
+| `standardFlowEnabled` | boolean | No | Enables authorization-code flow. |
+| `implicitFlowEnabled` | boolean | No | Enables implicit flow. |
+| `directAccessGrantsEnabled` | boolean | No | Enables direct access grants. |
+| `serviceAccountsEnabled` | boolean | No | Enables service account support. |
+| `redirectUris` | string[] | No | Allowed redirect URI patterns. |
+| `webOrigins` | string[] | No | Allowed web origins. |
 
 ---
 
@@ -342,7 +378,7 @@ kubectl get AuthFlows -n keycloak-dev
 | `topLevel` | boolean | No | Marks this as a top-level flow. |
 | `requireMFA` | boolean | No | If `true`, enforces OTP in the generated flow. |
 
-If `realmRef` is omitted, the controller falls back to `master` during reconciliation.
+If `realmRef` is omitted, the API server rejects the resource. This is intentional to prevent accidental writes into the privileged `master` realm.
 
 `requireMFA: true` adds OTP as required execution in the generated flow. With `false`, the flow stays username/password only.
 
@@ -391,7 +427,7 @@ spec:
 | `signingCertificateRef.name` | string | Conditional | Secret name for SAML signing certificate. |
 | `signingCertificateRef.key` | string | Conditional | Secret key for SAML signing certificate PEM. |
 
-If `realmRef` is omitted, the controller falls back to `master` during reconciliation.
+If `realmRef` is omitted, the API server rejects the resource. This is intentional to prevent accidental writes into the privileged `master` realm.
 
 For OIDC, keep endpoint and client metadata in `spec.config` (for example `authorizationUrl`, `tokenUrl`, `clientId`, `defaultScope`) and place the sensitive `clientSecret` in `clientSecretRef`.
 
@@ -438,24 +474,24 @@ and [examples/restore-cluster-example.yaml](../examples/restore-cluster-example.
 
 ## CR Status and Conditions
 
-Every resource managed by the operator exposes a `status` subresource updated on every reconciliation pass. The standard fields are:
+Every resource managed by the operator exposes a `status` subresource. The `Realm` status is the authoritative result of the `keycloak-config-cli` Job because the Realm controller builds and applies the combined `realm.json` payload. Child resources (`Client`, `Group`, `User`, `ClientScope`, `AuthFlow`, `IdentityProvider`) currently report whether delegation to the Realm sync succeeded; they do not independently confirm Keycloak-side success after the Realm Job completes.
 
 | Field | Type | Description |
 |---|---|---|
-| `status.ready` | boolean | `true` when the resource is in sync with Keycloak |
-| `status.keycloakId` | string | The Keycloak-internal UUID of the managed object |
+| `status.ready` | boolean | For `Realm`, `true` when the config-cli Job completed successfully. For child resources, currently `false` with `JobRunning` after successful delegation to the Realm sync. |
+| `status.keycloakId` | string | For `Realm`, set to the realm name on successful sync. Child resources currently do not populate Keycloak-internal UUIDs. |
 | `status.message` | string | Human-readable summary of the last operation or error |
 | `status.lastSyncTime` | string (RFC3339) | Timestamp of the last reconciliation attempt |
 | `status.conditions` | array | Kubernetes-standard condition entries |
 
-The `conditions` array contains a single `Ready` condition whose `status` is `"True"` on success and `"False"` on any failure, with a descriptive `reason` and `message`:
+The `conditions` array contains a single `Ready` condition. For a `Realm`, the condition changes from `False/JobRunning` while the import Job is running to `True/Synced` after success, or `False/SyncFailed` after failure:
 
 ```bash
-kubectl get Clients -n keycloak-dev -o wide
-# NAME     REALM      CLIENTID   PROTOCOL        READY   AGE
-# my-app   tenant-a   my-app     openid-connect  true    2m
+kubectl get Realms -n keycloak-dev -o wide
+# NAME       REALMNAME   ENABLED   READY   OBSGEN   AGE
+# tenant-a   tenant-a    true      true    3        2m
 
-kubectl describe Client my-app -n keycloak-dev
+kubectl describe Realm tenant-a -n keycloak-dev
 # Status:
 #   Conditions:
 #     Last Transition Time:  2026-03-04T10:00:00Z
@@ -463,13 +499,27 @@ kubectl describe Client my-app -n keycloak-dev
 #     Reason:                Synced
 #     Status:                True
 #     Type:                  Ready
-#   Keycloak Id:             b3f2c1d4-...
+#   Keycloak Id:             tenant-a
 #   Last Sync Time:          2026-03-04T10:00:00Z
 #   Message:                 Synced successfully
+#   Observed Generation:     3
 #   Ready:                   true
 ```
 
-When Keycloak is unreachable, the condition flips to `Ready=False` with the HTTP error in `message`. Once connectivity is restored the next reconciliation cycle sets it back to `Ready=True` automatically.
+After a child resource delegates successfully, expect a pending status similar to:
+
+```bash
+kubectl describe Client my-app -n keycloak-dev
+# Status:
+#   Conditions:
+#     Message:  Delegated to Realm Sync - awaiting Job completion
+#     Reason:   JobRunning
+#     Status:   False
+#     Type:     Ready
+#   Ready:      false
+```
+
+If Keycloak is unreachable, the `Realm` Job fails and the Realm condition is set to `Ready=False` with the Job failure message. Once connectivity is restored, the next successful Realm reconciliation sets the Realm back to `Ready=True`.
 
 ---
 
@@ -478,7 +528,7 @@ When Keycloak is unreachable, the condition flips to `Ready=False` with the HTTP
 ### Check resource status
 
 ```bash
-kubectl get Realms,Clients,Groups,Users,ClientScopes -n keycloak-dev
+kubectl get Realms,Clients,Groups,Users,ClientScopes,AuthFlows,IdentityProviders -n keycloak-dev
 kubectl describe Realm tenant-a -n keycloak-dev
 ```
 
@@ -492,9 +542,9 @@ kubectl logs -l app=keycloak-operator -n keycloak-dev --follow
 
 | Symptom | Likely cause |
 |---|---|
-| `status.ready: false`, message contains `404` | Realm in `realmRef` does not exist yet — apply the `Realm` CR first |
-| User ready but group not joined | Group CR not yet synced — check `Group` status |
-| Client secret not created | Check operator logs; token auth failure or `publicClient: true` |
+| `status.ready: false`, message contains `target Realm` | Realm in `realmRef` does not exist yet - apply the `Realm` CR first |
+| Child CR remains `JobRunning` | Check the referenced `Realm` status and latest `keycloak-config-cli` Job for the authoritative import result |
+| Client secret not created | Check operator logs; the client may be `publicClient: true` or secret creation failed |
 
 ---
 

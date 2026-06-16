@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -62,6 +63,7 @@ func (r *AuthFlowReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		log.Error(err, "sync failed", "alias", obj.Spec.Alias)
 		r.Recorder.Eventf(&obj, corev1.EventTypeWarning, "SyncFailed", "Failed to delegate sync: %v", err)
 		err2 := UpdateStatusWithRetry(ctx, r.Client, req.NamespacedName, &obj, func(latest *v1alpha1.AuthFlow) {
+			latest.Status.ObservedGeneration = latest.Generation
 			setFailed(&latest.Status.CommonStatus, err.Error())
 		})
 		if err2 != nil {
@@ -74,14 +76,19 @@ func (r *AuthFlowReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *AuthFlowReconciler) sync(ctx context.Context, obj *v1alpha1.AuthFlow) error {
+	// realmRef is mandatory; never fall back to the privileged "master" realm.
 	realmName := obj.Spec.RealmRef
 	if realmName == "" {
-		realmName = "master"
+		return fmt.Errorf("realmRef is required and must not be empty")
 	}
 	if err := TriggerRealmSync(ctx, r.Client, obj.Namespace, realmName); err != nil {
 		return err
 	}
-	setReady(&obj.Status.CommonStatus, obj.Spec.Alias, "Delegated to Realm Sync")
+	obj.Status.ObservedGeneration = obj.Generation
+	// Status truthfulness: the config-cli Job has not run yet, so the resource is
+	// only Pending/Syncing, not Ready. Realm status records the final Job result;
+	// child success back-propagation is not implemented yet.
+	setPending(&obj.Status.CommonStatus, "Delegated to Realm Sync — awaiting Job completion")
 	return r.Status().Update(ctx, obj)
 }
 

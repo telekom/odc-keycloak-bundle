@@ -26,7 +26,7 @@
 #
 # ACCESS:
 #   After running, open: http://localhost:<port>
-#   Default credentials: admin / admin
+#   Retrieve admin credentials from the keycloak-admin Secret in the instance namespace.
 #
 # NOTES:
 #   - Press Ctrl+C to stop the port-forward
@@ -53,7 +53,7 @@ LOCAL_PORT="8080"
 
 is_valid_port() {
     local value="$1"
-    [[ "$value" =~ ^[0-9]+$ ]] && (( value >= 1 && value <= 65535 ))
+    [[ "$value" =~ ^[0-9]+$ ]] && ((value >= 1 && value <= 65535))
 }
 
 if [[ -n "${2:-}" ]]; then

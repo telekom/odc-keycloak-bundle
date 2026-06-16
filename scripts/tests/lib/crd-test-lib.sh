@@ -87,7 +87,7 @@ write_junit_report() {
         done
 
         echo "</testsuite>"
-    } > "${report_file}"
+    } >"${report_file}"
 
     info "JUnit report written: ${report_file}"
 }
@@ -351,7 +351,7 @@ wait_for_secret_exists() {
     local deadline=$((SECONDS + timeout_seconds))
 
     while [ "${SECONDS}" -lt "${deadline}" ]; do
-        if kubectl get secret "${secret_name}" -n "${NAMESPACE}" > /dev/null 2>&1; then
+        if kubectl get secret "${secret_name}" -n "${NAMESPACE}" >/dev/null 2>&1; then
             return 0
         fi
         sleep 3
@@ -399,10 +399,22 @@ wait_for_authflow_absent() {
 verify_coexistence() {
     local all_ok=true
 
-    kubectl get realm "${REALM_NAME}" -n "${NAMESPACE}" -o jsonpath='{.metadata.name}' &>/dev/null || { warn "Realm missing"; all_ok=false; }
-    kubectl get clientscope "${CLIENTSCOPE_NAME}" -n "${NAMESPACE}" -o jsonpath='{.metadata.name}' &>/dev/null || { warn "ClientScope missing"; all_ok=false; }
-    kubectl get group "${GROUP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.metadata.name}' &>/dev/null || { warn "Group missing"; all_ok=false; }
-    kubectl get user "${USERNAME}" -n "${NAMESPACE}" -o jsonpath='{.metadata.name}' &>/dev/null || { warn "User missing"; all_ok=false; }
+    kubectl get realm "${REALM_NAME}" -n "${NAMESPACE}" -o jsonpath='{.metadata.name}' &>/dev/null || {
+        warn "Realm missing"
+        all_ok=false
+    }
+    kubectl get clientscope "${CLIENTSCOPE_NAME}" -n "${NAMESPACE}" -o jsonpath='{.metadata.name}' &>/dev/null || {
+        warn "ClientScope missing"
+        all_ok=false
+    }
+    kubectl get group "${GROUP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.metadata.name}' &>/dev/null || {
+        warn "Group missing"
+        all_ok=false
+    }
+    kubectl get user "${USERNAME}" -n "${NAMESPACE}" -o jsonpath='{.metadata.name}' &>/dev/null || {
+        warn "User missing"
+        all_ok=false
+    }
 
     [[ "${all_ok}" == true ]]
 }

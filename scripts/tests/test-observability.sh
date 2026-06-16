@@ -59,6 +59,7 @@ T2_STATUS="NOT RUN"
 T3_STATUS="NOT RUN"
 T4_STATUS="NOT RUN"
 T5_STATUS="NOT RUN"
+T6_STATUS="NOT RUN"
 
 # ------------------------------------------------------------------------------
 # Port-forward cleanup trap
@@ -100,7 +101,7 @@ port_forward_bg() {
 # Helper: kill the most recently started port-forward PID and remove it from array
 kill_last_pf() {
     if [[ ${#PF_PIDS[@]} -gt 0 ]]; then
-        local last_idx=$(( ${#PF_PIDS[@]} - 1 ))
+        local last_idx=$((${#PF_PIDS[@]} - 1))
         local pid="${PF_PIDS[$last_idx]}"
         kill "$pid" 2>/dev/null || true
         unset 'PF_PIDS[last_idx]'
@@ -118,23 +119,23 @@ check_prerequisites() {
     info "============================================================"
 
     info "Verifying Keycloak pod is ready in namespace '$NAMESPACE'..."
-    kubectl wait --for=condition=ready pod -l app=keycloak -n "$NAMESPACE" --timeout=60s \
-        || fail "Keycloak pod is not ready in namespace '$NAMESPACE'"
+    kubectl wait --for=condition=ready pod -l app=keycloak -n "$NAMESPACE" --timeout=60s ||
+        fail "Keycloak pod is not ready in namespace '$NAMESPACE'"
 
     info "Verifying Prometheus Operator CRD (servicemonitors.monitoring.coreos.com) exists..."
-    kubectl get crd servicemonitors.monitoring.coreos.com \
-        || fail "Prometheus Operator CRD 'servicemonitors.monitoring.coreos.com' not found. Is the Prometheus Operator installed?"
+    kubectl get crd servicemonitors.monitoring.coreos.com ||
+        fail "Prometheus Operator CRD 'servicemonitors.monitoring.coreos.com' not found. Is the Prometheus Operator installed?"
 
     info "Verifying Jaeger deployment is ready in namespace 'observability'..."
-    kubectl wait --for=condition=available deployment/jaeger -n observability --timeout=60s \
-        || fail "Jaeger deployment is not available in namespace 'observability'"
+    kubectl wait --for=condition=available deployment/jaeger -n observability --timeout=60s ||
+        fail "Jaeger deployment is not available in namespace 'observability'"
 
     info "Verifying Prometheus StatefulSet is ready in namespace '$NAMESPACE'..."
     timeout 120s bash -c \
-        "until kubectl get statefulset prometheus-keycloak -n '$NAMESPACE' &>/dev/null; do sleep 3; done" \
-        || fail "Prometheus StatefulSet 'prometheus-keycloak' was not created in namespace '$NAMESPACE' (waited 120s)"
-    kubectl rollout status statefulset/prometheus-keycloak -n "$NAMESPACE" --timeout=120s \
-        || fail "Prometheus StatefulSet 'prometheus-keycloak' is not ready in namespace '$NAMESPACE'"
+        "until kubectl get statefulset prometheus-keycloak -n '$NAMESPACE' &>/dev/null; do sleep 3; done" ||
+        fail "Prometheus StatefulSet 'prometheus-keycloak' was not created in namespace '$NAMESPACE' (waited 120s)"
+    kubectl rollout status statefulset/prometheus-keycloak -n "$NAMESPACE" --timeout=120s ||
+        fail "Prometheus StatefulSet 'prometheus-keycloak' is not ready in namespace '$NAMESPACE'"
 
     info "All prerequisites satisfied."
 }
@@ -153,7 +154,7 @@ test_1_servicemonitor() {
     if ! kubectl get servicemonitor keycloak -n "$NAMESPACE"; then
         warn "ServiceMonitor 'keycloak' not found in namespace '$NAMESPACE'"
         T1_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
     info "[OK] ServiceMonitor 'keycloak' found."
@@ -172,7 +173,7 @@ test_1_servicemonitor() {
         warn "curl output: $metrics_output"
         kill_last_pf
         T1_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
 
@@ -192,7 +193,7 @@ test_1_servicemonitor() {
         echo "$metrics_output" | head -20 >&2
         kill_last_pf
         T1_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
 
@@ -257,7 +258,7 @@ test_2_podmonitor() {
         if [[ -z "$podmonitor_name" ]]; then
             warn "No PodMonitor found in namespace '$NAMESPACE' after remediation attempt."
             T2_STATUS="FAIL"
-            FAILURES=$(( FAILURES + 1 ))
+            FAILURES=$((FAILURES + 1))
             return
         fi
     fi
@@ -274,7 +275,7 @@ test_2_podmonitor() {
     if [[ -z "$cnpg_primary_pod" ]]; then
         warn "No CNPG primary pod found with label 'cnpg.io/instanceRole=primary' in namespace '$NAMESPACE'"
         T2_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
     info "[OK] Found CNPG primary pod: $cnpg_primary_pod"
@@ -290,7 +291,7 @@ test_2_podmonitor() {
         warn "curl output: $cnpg_metrics"
         kill_last_pf
         T2_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
 
@@ -300,7 +301,7 @@ test_2_podmonitor() {
         echo "$cnpg_metrics" | head -20 >&2
         kill_last_pf
         T2_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
 
@@ -337,7 +338,7 @@ test_3_otel_tracing() {
         warn "Keycloak rollout did not complete after enabling OTEL tracing."
         _revert_tracing_patch
         T3_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
     info "[OK] Keycloak rollout complete."
@@ -359,12 +360,12 @@ test_3_otel_tracing() {
     # 3d. Generate a login event via kcadm.sh to produce a trace
     info "[4/8] Generating login event via kcadm.sh inside the Keycloak pod..."
     if ! kubectl exec -n "$NAMESPACE" "$KEYCLOAK_POD" -- \
-            /opt/keycloak/bin/kcadm.sh config credentials \
-            --server http://localhost:8080 \
-            --realm master \
-            --user "$ADMIN_USER" \
-            --password "$ADMIN_PASS" \
-            --config /tmp/kcadm-obs.config; then
+        /opt/keycloak/bin/kcadm.sh config credentials \
+        --server http://localhost:8080 \
+        --realm master \
+        --user "$ADMIN_USER" \
+        --password "$ADMIN_PASS" \
+        --config /tmp/kcadm-obs.config; then
         warn "kcadm.sh credentials config failed - login event may not have been generated."
         warn "Continuing to check Jaeger anyway (span may still be present from earlier activity)."
     else
@@ -387,7 +388,7 @@ test_3_otel_tracing() {
         kill_last_pf
         _revert_tracing_patch
         T3_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
 
@@ -397,7 +398,7 @@ test_3_otel_tracing() {
         kill_last_pf
         _revert_tracing_patch
         T3_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
     info "[OK] 'keycloak' service found in Jaeger."
@@ -411,7 +412,7 @@ test_3_otel_tracing() {
         kill_last_pf
         _revert_tracing_patch
         T3_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
 
@@ -425,7 +426,7 @@ test_3_otel_tracing() {
         kill_last_pf
         _revert_tracing_patch
         T3_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
 
@@ -450,7 +451,7 @@ _revert_tracing_patch() {
     info "Patching Keycloak deployment back: KC_TRACING_ENABLED=false ..."
     kubectl set env deployment/keycloak -n "$NAMESPACE" KC_TRACING_ENABLED=false || true
     info "Waiting for Keycloak rollout after revert (timeout 300s)..."
-    kubectl rollout status deployment/keycloak -n "$NAMESPACE" --timeout=300s || \
+    kubectl rollout status deployment/keycloak -n "$NAMESPACE" --timeout=300s ||
         warn "Keycloak rollout did not complete after reverting tracing patch."
 }
 
@@ -469,7 +470,7 @@ test_4_alert_rules() {
     if ! kubectl get prometheusrule keycloak -n "$NAMESPACE"; then
         warn "PrometheusRule 'keycloak' not found in namespace '$NAMESPACE'"
         T4_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
     info "[OK] PrometheusRule 'keycloak' found."
@@ -479,10 +480,10 @@ test_4_alert_rules() {
 
     local defined_alerts
     if ! defined_alerts=$(kubectl get prometheusrule keycloak -n "$NAMESPACE" \
-            -o json | jq -r '.spec.groups[].rules[].alert' 2>/dev/null); then
+        -o json | jq -r '.spec.groups[].rules[].alert' 2>/dev/null); then
         warn "Failed to extract alert names from PrometheusRule 'keycloak'."
         T4_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
 
@@ -507,7 +508,7 @@ test_4_alert_rules() {
             info "  [OK] $alert defined"
         else
             warn "  [MISSING] $alert"
-            missing_count=$(( missing_count + 1 ))
+            missing_count=$((missing_count + 1))
         fi
     done
 
@@ -519,7 +520,7 @@ test_4_alert_rules() {
         warn "$missing_count expected alert(s) are MISSING from the PrometheusRule."
         info "NOTE: Full alert firing requires a running Prometheus - verified rule presence and structure only."
         T4_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
 
@@ -553,7 +554,7 @@ test_5_alert_evaluation() {
         warn "Service 'prometheus' not found in namespace '$NAMESPACE'."
         warn "Deploy the Prometheus instance first: kubectl apply -n $NAMESPACE -f manifests/monitoring/prometheus.yaml"
         T5_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
     info "[OK] svc/prometheus found."
@@ -577,7 +578,7 @@ test_5_alert_evaluation() {
         warn "Prometheus API did not become healthy within 60 s."
         kill_last_pf
         T5_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
     info "[OK] Prometheus API is healthy."
@@ -592,14 +593,14 @@ test_5_alert_evaluation() {
         warn "Ensure the ServiceMonitor is applied and Prometheus has had time to reload its config."
         kill_last_pf
         T5_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
 
     local keycloak_target_health
-    keycloak_target_health=$(echo "$targets_json" \
-        | jq -r '.data.activeTargets[] | select(.labels.job=="keycloak") | .health' \
-        2>/dev/null | head -1 || echo "unknown")
+    keycloak_target_health=$(echo "$targets_json" |
+        jq -r '.data.activeTargets[] | select(.labels.job=="keycloak") | .health' \
+            2>/dev/null | head -1 || echo "unknown")
     info "[OK] Keycloak scrape target found (health: $keycloak_target_health)."
 
     # 5d. Record original replica count and scale Keycloak to 0
@@ -624,7 +625,7 @@ test_5_alert_evaluation() {
         val=$(echo "$qresult" | jq -r '.data.result[0].value[1] // empty' 2>/dev/null || echo "")
         if [[ "$val" == "0" ]] || [[ -z "$val" && "$i" -gt 4 ]]; then
             metric_zero=true
-            info "[OK] up{job=\"keycloak\"} is 0 (or target gone) after ~$(( i * 5 )) s."
+            info "[OK] up{job=\"keycloak\"} is 0 (or target gone) after ~$((i * 5)) s."
             break
         fi
         sleep 5
@@ -635,7 +636,7 @@ test_5_alert_evaluation() {
         _restore_keycloak_replicas
         kill_last_pf
         T5_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
 
@@ -646,9 +647,9 @@ test_5_alert_evaluation() {
     for i in $(seq 1 24); do
         local alerts_json
         alerts_json=$(curl -sf "http://localhost:9090/api/v1/alerts" 2>/dev/null || echo "{}")
-        alert_state=$(echo "$alerts_json" \
-            | jq -r '.data.alerts[] | select(.labels.alertname=="KeycloakDown") | .state' \
-            2>/dev/null | head -1 || echo "")
+        alert_state=$(echo "$alerts_json" |
+            jq -r '.data.alerts[] | select(.labels.alertname=="KeycloakDown") | .state' \
+                2>/dev/null | head -1 || echo "")
         if [[ "$alert_state" == "pending" || "$alert_state" == "firing" ]]; then
             alert_found=true
             break
@@ -662,7 +663,7 @@ test_5_alert_evaluation() {
         _restore_keycloak_replicas
         kill_last_pf
         T5_STATUS="FAIL"
-        FAILURES=$(( FAILURES + 1 ))
+        FAILURES=$((FAILURES + 1))
         return
     fi
 
@@ -696,10 +697,64 @@ _restore_keycloak_replicas() {
 # Helper: map a status string to a summary marker
 _status_icon() {
     case "$1" in
-        PASS)    echo "OK" ;;
-        FAIL)    echo "FAIL" ;;
-        *)       echo "NA" ;;
+        PASS) echo "OK" ;;
+        FAIL) echo "FAIL" ;;
+        *) echo "NA" ;;
     esac
+}
+
+# ------------------------------------------------------------------------------
+# Test 6 - Operator metrics endpoint reachability
+# ------------------------------------------------------------------------------
+# Verifies that the keycloak-operator exposes its Prometheus /metrics endpoint
+# on the configured port (default 8080) via the Helm-created metrics Service.
+# ------------------------------------------------------------------------------
+test_6_operator_metrics() {
+    info ""
+    info "============================================================"
+    info "TEST 6: Operator metrics endpoint reachability"
+    info "============================================================"
+
+    # The operator namespace can be overridden; defaults to the Keycloak instance namespace.
+    local op_ns="${OPERATOR_NAMESPACE:-$NAMESPACE}"
+    local op_svc="keycloak-operator-metrics"
+    local local_port=19101
+
+    info "[1/3] Checking operator metrics Service '$op_svc' exists in namespace '$op_ns'..."
+    if ! kubectl get svc "$op_svc" -n "$op_ns" &>/dev/null; then
+        warn "Service '$op_svc' not found in namespace '$op_ns'."
+        warn "Ensure the operator is deployed with metrics.enabled=true."
+        T6_STATUS="FAIL"
+        FAILURES=$((FAILURES + 1))
+        return
+    fi
+    info "[OK] Service '$op_svc' found."
+
+    info "[2/3] Port-forwarding svc/$op_svc ${local_port}:8080..."
+    port_forward_bg "$op_ns" "svc/$op_svc" "${local_port}:8080"
+    sleep 3
+
+    info "[3/3] Curling http://localhost:${local_port}/metrics..."
+    local metrics_output
+    if ! metrics_output=$(curl -sf "http://localhost:${local_port}/metrics" 2>&1); then
+        warn "Failed to reach operator metrics endpoint."
+        warn "curl output: $metrics_output"
+        T6_STATUS="FAIL"
+        FAILURES=$((FAILURES + 1))
+        return
+    fi
+
+    local cr_count
+    cr_count=$(echo "$metrics_output" | grep -c "^controller_runtime_" || true)
+    if [[ "$cr_count" -eq 0 ]]; then
+        warn "No controller_runtime_* metrics found — operator metrics may not be initialised."
+        T6_STATUS="FAIL"
+        FAILURES=$((FAILURES + 1))
+        return
+    fi
+
+    info "[OK] $cr_count controller_runtime_* metric line(s) confirmed at /metrics."
+    T6_STATUS="PASS"
 }
 
 print_summary() {
@@ -715,9 +770,10 @@ print_summary() {
     printf "  %-6s  %-55s  %s\n" "3" "OTEL tracing: Keycloak spans found in Jaeger" "$T3_STATUS"
     printf "  %-6s  %-55s  %s\n" "4" "PrometheusRule alert presence and structure" "$T4_STATUS"
     printf "  %-6s  %-55s  %s\n" "5" "Prometheus rule evaluation: KeycloakDown alert" "$T5_STATUS"
+    printf "  %-6s  %-55s  %s\n" "6" "Operator metrics endpoint reachability" "$T6_STATUS"
     info "============================================================"
     if [[ "$FAILURES" -eq 0 ]]; then
-        info "ALL TESTS PASSED (5/5)"
+        info "ALL TESTS PASSED (6/6)"
     else
         warn "$FAILURES test(s) FAILED. Review output above for details."
     fi
@@ -727,7 +783,7 @@ print_summary() {
     if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
         local overall
         if [[ "$FAILURES" -eq 0 ]]; then
-            overall="All tests passed (5/5)"
+            overall="All tests passed (6/6)"
         else
             overall="$FAILURES test(s) failed"
         fi
@@ -743,9 +799,10 @@ print_summary() {
             echo "| 3 | OTEL tracing: Keycloak spans found in Jaeger | $(_status_icon "$T3_STATUS") $T3_STATUS |"
             echo "| 4 | PrometheusRule alert presence and structure | $(_status_icon "$T4_STATUS") $T4_STATUS |"
             echo "| 5 | Prometheus rule evaluation: KeycloakDown alert | $(_status_icon "$T5_STATUS") $T5_STATUS |"
+            echo "| 6 | Operator metrics endpoint reachability | $(_status_icon "$T6_STATUS") $T6_STATUS |"
             echo ""
             echo "**Overall: $overall**"
-        } >> "$GITHUB_STEP_SUMMARY"
+        } >>"$GITHUB_STEP_SUMMARY"
     fi
 }
 
@@ -765,6 +822,7 @@ test_2_podmonitor
 test_3_otel_tracing
 test_4_alert_rules
 test_5_alert_evaluation
+test_6_operator_metrics
 
 set -e
 

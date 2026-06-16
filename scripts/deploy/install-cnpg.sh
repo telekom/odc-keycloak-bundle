@@ -11,11 +11,11 @@
 #   ./scripts/deploy/install-cnpg.sh [version]
 #
 # ARGUMENTS:
-#   version   Optional. CloudNativePG version (default: "1.28.1")
+#   version   Optional. CloudNativePG version (default: "1.29.1")
 #
 # EXAMPLES:
-#   ./scripts/deploy/install-cnpg.sh              # Install v1.28.1
-#   ./scripts/deploy/install-cnpg.sh 1.29.0       # Install specific version
+#   ./scripts/deploy/install-cnpg.sh              # Install v1.29.1
+#   ./scripts/deploy/install-cnpg.sh 1.29.1       # Install specific version
 #
 # CREATES:
 #   - Namespace "cnpg-system"
@@ -36,8 +36,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../utils/common.sh"
 
-CNPG_VERSION="${1:-1.29.0}"
-CNPG_MINOR="${CNPG_VERSION%.*}"   # e.g. 1.28.1 -> 1.28
+CNPG_VERSION="${1:-1.29.1}"
+CNPG_MINOR="${CNPG_VERSION%.*}" # e.g. 1.29.1 -> 1.29
 
 info "Installing CloudNativePG operator v${CNPG_VERSION}..."
 

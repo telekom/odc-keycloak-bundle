@@ -40,6 +40,7 @@ func main() {
 	adminSecretKey := getEnv("KEYCLOAK_ADMIN_SECRET_KEY", "password")
 
 	watchNamespace := getEnv("WATCH_NAMESPACE", "")
+	metricsAddr := getEnv("METRICS_BIND_ADDRESS", ":8080")
 	checkInterval := getEnvDuration("CHECK_INTERVAL", 30)
 
 	log.Info("starting keycloak-operator",
@@ -68,7 +69,7 @@ func main() {
 		LeaderElection:          true,
 		LeaderElectionID:        "keycloak-operator-leader",
 		LeaderElectionNamespace: leaderElectionNamespace,
-		Metrics:                 metricsserver.Options{BindAddress: "0"},
+		Metrics:                 metricsserver.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress:  ":8081",
 	})
 	if err != nil {

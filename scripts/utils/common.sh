@@ -19,9 +19,9 @@
 #
 # ==============================================================================
 #
-# OCM Registry (override via environment variable for local testing)
-# Example: export OCM_REGISTRY="my-registry.example.com/keycloak-bundle"
-OCM_REGISTRY="${OCM_REGISTRY:-ghcr.io/opendefensecloud/keycloak-bundle}"
+# OCM Registry (set via environment variable or script argument)
+# Example: export OCM_REGISTRY="ghcr.io/my-org"
+OCM_REGISTRY="${OCM_REGISTRY:-}"
 
 # Logging functions
 info() {

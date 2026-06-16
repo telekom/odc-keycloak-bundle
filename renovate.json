@@ -42,6 +42,7 @@
       "description": "Group all CloudNativePG updates",
       "matchPackageNames": [
         "ghcr.io/cloudnative-pg/cloudnative-pg",
+        "ghcr.io/cloudnative-pg/postgresql",
         "cloudnative-pg/cloudnative-pg"
       ],
       "groupName": "cloudnative-pg",
@@ -95,6 +96,16 @@
     },
     {
       "customType": "regex",
+      "description": "Parse Docker image variables in GitHub Actions workflows",
+      "fileMatch": ["^\\.github/workflows/.*\\.ya?ml$"],
+      "matchStrings": [
+        "(?<varName>[A-Z0-9_]+_IMAGE):\\s*(?<depName>[^\\s:{}]+(?:/[^\\s:{}]+)+):(?<currentValue>[^@\\s'\"{}]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?"
+      ],
+      "autoReplaceStringTemplate": "{{{varName}}}: {{{depName}}}:{{{newValue}}}{{#if newDigest}}@{{{newDigest}}}{{/if}}",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
       "description": "Update CNPG_VERSION in CNPG installation bash script",
       "fileMatch": ["^scripts/.*\\.sh$"],
       "matchStrings": [
@@ -113,12 +124,43 @@
     },
     {
       "customType": "regex",
+      "description": "Update Go toolchain version in go.mod",
+      "fileMatch": ["(^|/)go\\.mod$"],
+      "matchStrings": [
+        "(?m)^go\\s+(?<currentValue>\\d+\\.\\d+(?:\\.\\d+)?)\\s*$"
+      ],
+      "autoReplaceStringTemplate": "go {{{newValue}}}",
+      "depNameTemplate": "go",
+      "datasourceTemplate": "golang-version"
+    },
+    {
+      "customType": "regex",
       "description": "Parse CNPG imageName in CRDs for updates and digest pinning",
       "fileMatch": ["^kro/.*\\.yaml$", "^examples/.*\\.yaml$"],
       "matchStrings": [
         "imageName:\\s*(?<depName>[^\\s:]+):(?<currentValue>[^@\\s'\"]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?"
       ],
       "autoReplaceStringTemplate": "imageName: {{{depName}}}:{{{newValue}}}{{#if newDigest}}@{{{newDigest}}}{{/if}}",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Update OCI image defaults in KRO schemas",
+      "fileMatch": ["^kro/.*\\.yaml$"],
+      "matchStrings": [
+        "default:\\s*[\"']?(?<depName>[^\\s:\"']+(?:/[^\\s:\"']+)+):(?<currentValue>[^@\\s'\"]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?[\"']?"
+      ],
+      "autoReplaceStringTemplate": "default: \"{{{depName}}}:{{{newValue}}}{{#if newDigest}}@{{{newDigest}}}{{/if}}\"",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Digest-pin configCliImage tag in keycloak-operator Helm values",
+      "fileMatch": ["^charts/keycloak-operator/values\\.yaml$"],
+      "matchStrings": [
+        "repository:\\s*(?<depName>quay\\.io/adorsys/keycloak-config-cli)\\s*\\n\\s*tag:\\s*[\"']?(?<currentValue>[^@\\s'\"]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?[\"']?"
+      ],
+      "autoReplaceStringTemplate": "repository: {{{depName}}}\n    tag: \"{{{newValue}}}{{#if newDigest}}@{{{newDigest}}}{{/if}}\"",
       "datasourceTemplate": "docker"
     },
     {

@@ -1,17 +1,20 @@
 #!/bin/bash
 # ==============================================================================
-# deploy-operator.sh - Deploy Keycloak Client Operator
+# deploy-operator.sh - Deploy Keycloak Operator
 # ==============================================================================
 #
 # PURPOSE:
-#   Deploys the Keycloak Client Operator which manages Client custom
-#   resources. The operator automates client registration in Keycloak.
+#   Deploys the namespace-scoped Keycloak Operator which manages Realm, Client,
+#   ClientScope, Group, User, AuthFlow, and IdentityProvider custom resources.
+#   The operator builds a realm export and applies it through keycloak-config-cli.
 #
 # USAGE:
 #   ./scripts/deploy/deploy-operator.sh [namespace]
 #
 # ARGUMENTS:
-#   namespace   Optional. Operator namespace (default: "keycloak-operator")
+#   namespace   Optional. Operator namespace (default: "keycloak-operator").
+#               In normal bundle deployments this should be the Keycloak
+#               instance namespace, because WATCH_NAMESPACE is the pod namespace.
 #
 # EXAMPLES:
 #   ./scripts/deploy/deploy-operator.sh                        # Deploy to keycloak-operator
@@ -19,15 +22,16 @@
 #
 # CREATES:
 #   - Namespace for the operator
-#   - CRD: Clients.keycloak.opendefense.cloud
-#   - Operator deployment (when templates are complete)
+#   - CRDs for all keycloak.opendefense.cloud resources
+#   - Operator deployment
 #
 # STATUS:
-#   Operator is implemented (Bash-based controller).
+#   Operator is implemented in Go/controller-runtime and delegates Keycloak
+#   imports to keycloak-config-cli Jobs.
 #
 # SEE ALSO:
 #   charts/keycloak-operator/ - Helm chart for the operator
-#   examples/client-example.yaml     - Example Client resource
+#   examples/                        - Example Keycloak custom resources
 #
 # ==============================================================================
 set -e
@@ -42,7 +46,7 @@ OCM_CTF_PATH="${OCM_CTF_PATH:-$PROJECT_ROOT/ocm-output/keycloak-bundle-ctf.tar.g
 OCM_PUBLIC_KEY_PATH="${OCM_PUBLIC_KEY_PATH:-$PROJECT_ROOT/ocm-key.pub}"
 OCM_SIGNATURE_NAME="${OCM_SIGNATURE_NAME:-keycloak-bundle-sig}"
 
-info "Deploying Keycloak Client Operator to: $OPERATOR_NAMESPACE"
+info "Deploying Keycloak Operator to: $OPERATOR_NAMESPACE"
 
 # Create operator namespace
 kubectl create namespace "$OPERATOR_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - || fail "Failed to create namespace" 1
@@ -52,7 +56,7 @@ info "Installing CRDs..."
 kubectl apply -f "$PROJECT_ROOT/charts/keycloak-operator/crds/" || fail "Failed to install CRDs" 2
 
 # Check for helm
-if ! command -v helm &> /dev/null; then
+if ! command -v helm &>/dev/null; then
     fail "Helm is not installed. Please install helm first." 1
 fi
 
@@ -82,9 +86,9 @@ fi
 # Create a docker-registry pull secret when registry credentials are provided.
 # OPERATOR_IMAGE_PULL_SECRET — name for the k8s secret (e.g. "harbor-pull-secret")
 # REGISTRY_USERNAME / REGISTRY_PASSWORD — credentials for the registry host
-if [ -n "${OPERATOR_IMAGE_PULL_SECRET:-}" ] && \
-   [ -n "${REGISTRY_USERNAME:-}" ] && \
-   [ -n "${REGISTRY_PASSWORD:-}" ]; then
+if [ -n "${OPERATOR_IMAGE_PULL_SECRET:-}" ] &&
+    [ -n "${REGISTRY_USERNAME:-}" ] &&
+    [ -n "${REGISTRY_PASSWORD:-}" ]; then
     REGISTRY_HOST="${OPERATOR_IMAGE_REPO%%/*}"
     info "Creating image pull secret '${OPERATOR_IMAGE_PULL_SECRET}' for ${REGISTRY_HOST}..."
     kubectl create secret docker-registry "${OPERATOR_IMAGE_PULL_SECRET}" \
@@ -101,7 +105,7 @@ fi
 if kubectl get secret keycloak-admin -n "$OPERATOR_NAMESPACE" &>/dev/null; then
     ADMIN_PASS=$(kubectl get secret keycloak-admin -n "$OPERATOR_NAMESPACE" -o jsonpath='{.data.KEYCLOAK_ADMIN_PASSWORD}' | base64 -d)
     ADMIN_USER=$(kubectl get secret keycloak-admin -n "$OPERATOR_NAMESPACE" -o jsonpath='{.data.KEYCLOAK_ADMIN}' | base64 -d)
-    
+
     info "Provisioning 'keycloak-admin-creds' for Operator..."
     kubectl create secret generic keycloak-admin-creds \
         --from-literal=username="$ADMIN_USER" \

@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.3.0-final]
+
+### Fixed
+
+- **Corrected config-cli image digest** — replaced the stale/invalid `@sha256:f1eb28f…` digest (which no longer exists on `quay.io` and caused `ImagePullBackOff` on every config-cli Job, so no child resources were ever imported) with the valid `latest-26` digest `@sha256:1b22dfaa…` across `component-constructor.yaml`, `charts/keycloak-operator/values.yaml`, and `kro/rgd/keycloak-instance-rgd.yaml`.
+- **KRO RGD Keycloak 26.x compatibility** — `kro/rgd/keycloak-instance-rgd.yaml` replaced the deprecated `KC_PROXY=edge` (removed in Keycloak 26.x) with `KC_PROXY_HEADERS=xforwarded`, and renamed the admin bootstrap env vars `KEYCLOAK_ADMIN`/`KEYCLOAK_ADMIN_PASSWORD` to `KC_BOOTSTRAP_ADMIN_USERNAME`/`KC_BOOTSTRAP_ADMIN_PASSWORD` (Secret keys kept stable). Keycloak image bumped to `26.6.3` (digest-pinned) to match `component-constructor.yaml`.
+- **KRO RGD config-cli wiring** — the operator deployment in the RGD now sets the required `CONFIG_CLI_IMAGE` (digest-pinned) and `CONFIG_CLI_SA_NAME`; previously every Realm reconciliation failed with "config-cli image not configured". Added a dedicated `keycloak-config-cli` ServiceAccount with `automountServiceAccountToken: false` (least privilege).
+- **Child resource status truthfulness** — `Client`, `User`, `Group`, `ClientScope`, `AuthFlow`, and `IdentityProvider` controllers no longer report `Ready=true` immediately after delegating to the Realm sync. They now set a delegated `Pending` status (`Ready=false`, reason `JobRunning`); the owning `Realm` remains the authoritative source for config-cli Job success/failure until child success back-propagation is implemented.
+- **`realmRef` is now mandatory** — the `realmRef` field on all child CRDs is `Required` (no `omitempty`); the controllers and `TriggerRealmSync`/`IsSafelyDeletedFromRealm` reject an empty `realmRef` instead of silently falling back to the privileged `master` realm. This prevents accidental writes into the most privileged realm in multi-tenant/defense environments.
+- **Client secret garbage collection** — generated confidential-client secrets now carry an `OwnerReference` to the owning `Client` CR, so Kubernetes garbage-collects them when the CR is deleted (no orphaned credentials).
+
+### Added
+
+- Regression tests for child-controller status, `realmRef` validation, and client-secret ownership (`operator/internal/controller/child_status_test.go`).
+
+### Security
+
+- **NetworkPolicy egress hardening** — `keycloak-networkpolicy.yaml` now declares `Egress` in addition to `Ingress`. Outbound traffic from Keycloak pods is restricted to DNS (kube-system:53), the PostgreSQL database (`cnpg.io/cluster=keycloak-db`:5432), JGroups clustering peers (7800), and OTLP tracing (observability:4317). This enforces airgap egress control (BSI IT-Grundschutz / NATO baseline) and closes the exfiltration/C2 gap. `HARDENING.md` updated (Deviation #3 resolved).
+- **config-cli image digest-pinned in Helm values** — `charts/keycloak-operator/values.yaml` `configCliImage.tag` now carries the `@sha256:…` digest matching `component-constructor.yaml`, preventing tag drift after registry updates. Added a Renovate custom manager to keep the pin updated.
+- **Jaeger seccompProfile** — the Jaeger container in `scripts/deploy/install-jaeger.sh` now sets `seccompProfile: RuntimeDefault`, completing the security baseline for CI/dev infrastructure.
+
+### Documentation
+
+- **Corrected USAGE.md architecture diagram** — the sequence diagram no longer shows the operator making direct Keycloak REST calls. It now reflects the real data flow: the operator writes a `realm.json` config Secret and spawns a `config-cli` Job, which performs the Keycloak REST import and reports Job status back. This matches `ARCHITECTURE.md` and is relevant for threat modeling and operational handover in hardened environments.
+
+---
+
 ## [0.2.1-final]
 
 ### Security
@@ -63,8 +90,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **Keycloak Deployment** — added `RollingUpdate` strategy (`maxUnavailable: 0`, `maxSurge: 1`), `serviceAccountName: keycloak`, and `KC_CACHE_STACK=kubernetes` to activate Infinispan KUBE_PING cluster mode for distributed session replication across replicas.
-- **KRO RGD Keycloak Deployment resource** — aligned with standalone manifests: rolling update strategy, `serviceAccountName`, `KC_CACHE_STACK=kubernetes`, and health probes corrected to management port 9000 (was 8080).
+- **Keycloak Deployment** — added `RollingUpdate` strategy (`maxUnavailable: 0`, `maxSurge: 1`), `serviceAccountName: keycloak`, and HA support primitives. The current standalone manifest no longer sets `KC_CACHE_STACK=kubernetes`; enable and test the cache stack before relying on distributed session replication.
+- **KRO RGD Keycloak Deployment resource** — aligned with standalone manifests for rolling update strategy, `serviceAccountName`, and health probes on management port 9000 (was 8080). The current RGD no longer sets `KC_CACHE_STACK=kubernetes`; enable and test it before claiming session failover.
 - **`docs/ARCHITECTURE.md`** — added High Availability & Scalability section documenting multi-replica setup, PodDisruptionBudget, rolling updates, Infinispan KUBE_PING, and ServiceAccount/RBAC requirements.
 - **`docs/USAGE.md`** — extended deletion behaviour documentation to cover all CR types; added CR Status and Conditions reference section.
 - **`docs/DEPLOYMENT.md`** — added KRO-based deployment as the primary installation path; updated OCM resource table; fixed broken doc link.

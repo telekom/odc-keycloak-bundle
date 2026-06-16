@@ -13,10 +13,10 @@
 #   ./scripts/deploy/install-prometheus-operator.sh [version]
 #
 # ARGUMENTS:
-#   version   Optional. Prometheus Operator version (default: "0.80.1")
+#   version   Optional. Prometheus Operator version (default: "0.91.0")
 #
 # EXAMPLES:
-#   ./scripts/deploy/install-prometheus-operator.sh              # Install v0.80.1
+#   ./scripts/deploy/install-prometheus-operator.sh              # Install v0.91.0
 #   ./scripts/deploy/install-prometheus-operator.sh 0.81.0       # Install specific version
 #
 # CREATES:
@@ -44,7 +44,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../utils/common.sh"
 
-PROM_VERSION="${1:-0.80.1}"
+PROM_VERSION="${1:-0.91.0}"
 
 info "Installing Prometheus Operator v${PROM_VERSION}..."
 

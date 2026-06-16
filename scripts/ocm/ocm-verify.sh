@@ -45,7 +45,7 @@ trap cleanup EXIT
 if [[ -f "$CTF_PATH" ]]; then
     TEMP_DIR="$(mktemp -d)"
     case "$CTF_PATH" in
-        *.tar.gz|*.tgz)
+        *.tar.gz | *.tgz)
             tar -xzf "$CTF_PATH" -C "$TEMP_DIR" || fail "Failed to extract CTF tar.gz: $CTF_PATH" 4
             ;;
         *.tar)
@@ -63,7 +63,27 @@ info "  CTF:       $CTF_PATH"
 info "  Signature: $SIGNATURE_NAME"
 info "  PublicKey: $PUBLIC_KEY_PATH"
 
-ocm verify componentversions \
+OCM_CRED_ARGS=()
+if [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]]; then
+    REGISTRY_HOST="${OCM_REGISTRY_HOST:-}"
+    if [[ -z "$REGISTRY_HOST" && -n "${OPERATOR_IMAGE_REPO:-}" ]]; then
+        REGISTRY_HOST="${OPERATOR_IMAGE_REPO%%/*}"
+    fi
+    if [[ -z "$REGISTRY_HOST" && -n "${OPERATOR_IMAGE_REF:-}" ]]; then
+        REGISTRY_HOST="${OPERATOR_IMAGE_REF%%/*}"
+    fi
+    if [[ -z "$REGISTRY_HOST" ]]; then
+        fail "REGISTRY_USERNAME/REGISTRY_PASSWORD were provided, but OCM_REGISTRY_HOST or OPERATOR_IMAGE_REPO is required for OCM credential lookup" 6
+    fi
+    OCM_CRED_ARGS=(
+        --cred :type=OCIRegistry
+        --cred :hostname="$REGISTRY_HOST"
+        --cred username="$REGISTRY_USERNAME"
+        --cred password="$REGISTRY_PASSWORD"
+    )
+fi
+
+ocm "${OCM_CRED_ARGS[@]}" verify componentversions \
     --signature "$SIGNATURE_NAME" \
     --public-key "$PUBLIC_KEY_PATH" \
     "$TARGET_PATH" || fail "Signature verification failed" 5

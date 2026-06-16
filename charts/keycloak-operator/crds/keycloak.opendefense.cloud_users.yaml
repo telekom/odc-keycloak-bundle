@@ -91,12 +91,20 @@ spec:
               lastName:
                 type: string
               realmRef:
+                description: |-
+                  RealmRef is the name of the target Realm CR. It is mandatory: an empty
+                  or missing realmRef is rejected by admission and must never silently fall
+                  back to the privileged "master" realm (defense multi-tenant safety).
+                maxLength: 255
+                minLength: 1
+                pattern: ^[a-zA-Z0-9][a-zA-Z0-9_\-.]*$
                 type: string
               realmRoles:
                 items:
                   type: string
                 type: array
               username:
+                minLength: 1
                 type: string
             required:
             - realmRef
@@ -167,6 +175,11 @@ spec:
                 type: string
               message:
                 type: string
+              observedGeneration:
+                description: ObservedGeneration is the .metadata.generation the controller
+                  last reconciled.
+                format: int64
+                type: integer
               ready:
                 type: boolean
             required:

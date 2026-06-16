@@ -7,6 +7,9 @@ import (
 
 type RealmSpec struct {
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9][a-zA-Z0-9_\-.]*$`
 	RealmName            string `json:"realmName"`
 	DisplayName          string `json:"displayName,omitempty"`
 	Enabled              *bool  `json:"enabled,omitempty"`
@@ -30,6 +33,8 @@ type RealmSpec struct {
 
 type RealmStatus struct {
 	CommonStatus `json:",inline"`
+	// ActiveJobName is the name of the most recently spawned config-cli Job.
+	ActiveJobName string `json:"activeJobName,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -38,6 +43,7 @@ type RealmStatus struct {
 // +kubebuilder:printcolumn:name="RealmName",type="string",JSONPath=".spec.realmName"
 // +kubebuilder:printcolumn:name="Enabled",type="boolean",JSONPath=".spec.enabled"
 // +kubebuilder:printcolumn:name="Ready",type="boolean",JSONPath=".status.ready"
+// +kubebuilder:printcolumn:name="ObsGen",type="integer",JSONPath=".status.observedGeneration"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 type Realm struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -67,7 +73,7 @@ func (in *Realm) DeepCopyInto(out *Realm) {
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
 	in.Spec.DeepCopyInto(&out.Spec)
-	in.Status.CommonStatus.DeepCopyInto(&out.Status.CommonStatus)
+	in.Status.DeepCopyInto(&out.Status)
 }
 
 func (in *RealmSpec) DeepCopyInto(out *RealmSpec) {

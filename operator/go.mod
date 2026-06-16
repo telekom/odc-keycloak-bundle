@@ -1,6 +1,6 @@
 module github.com/opendefensecloud/keycloak-bundle/operator
 
-go 1.26.2
+go 1.26.4
 
 require (
 	k8s.io/api v0.35.4

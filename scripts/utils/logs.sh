@@ -47,7 +47,7 @@ case "$COMPONENT" in
     keycloak)
         SELECTOR="app=keycloak"
         ;;
-    postgres|db)
+    postgres | db)
         SELECTOR="cnpg.io/cluster=keycloak-db"
         ;;
     *)

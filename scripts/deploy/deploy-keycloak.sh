@@ -52,7 +52,7 @@ fi
 # Ensure Keycloak admin credentials secret exists
 if ! kubectl get secret keycloak-admin -n "$NAMESPACE" &>/dev/null; then
     ADMIN_USER="${KEYCLOAK_ADMIN_USERNAME:-admin}"
-    ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24)}"
+    ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)}"
 
     info "Creating secret 'keycloak-admin' in namespace '$NAMESPACE'..."
     kubectl create secret generic keycloak-admin -n "$NAMESPACE" \
@@ -72,7 +72,7 @@ kubectl apply -n "$NAMESPACE" -f "$PROJECT_ROOT/manifests/keycloak/" || fail "Fa
 info "Waiting for Keycloak to be ready..."
 info "(This may take a few minutes for first startup)"
 
-if ! kubectl wait -n "$NAMESPACE" --for=condition=ready pod -l app=keycloak --timeout=300s; then
+if ! kubectl wait -n "$NAMESPACE" --for=condition=ready pod -l app=keycloak --timeout=600s; then
     warn "Keycloak did not become ready within timeout."
     kubectl get pods -n "$NAMESPACE" -l app=keycloak
 fi

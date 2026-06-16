@@ -49,18 +49,32 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: WATCH_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: METRICS_BIND_ADDRESS
+              value: {{ if .Values.metrics.enabled }}":{{ .Values.metrics.port }}"{{ else }}"0"{{ end }}
             - name: LOG_LEVEL
               value: {{ .Values.operator.logLevel | quote }}
             - name: CONFIG_CLI_IMAGE
               value: "{{ .Values.operator.configCliImage.repository }}:{{ .Values.operator.configCliImage.tag }}"
+            - name: CONFIG_CLI_SA_NAME
+              value: {{ .Values.configCLI.serviceAccountName | quote }}
             - name: KEYCLOAK_ADMIN_SECRET_NAME
               value: {{ .Values.operator.adminSecret.name | quote }}
             - name: KEYCLOAK_ADMIN_SECRET_KEY
               value: {{ .Values.operator.adminSecret.key | quote }}
+          ports:
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true

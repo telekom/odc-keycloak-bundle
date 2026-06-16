@@ -300,7 +300,7 @@ metadata:
 spec:
   cluster:
     name: keycloak-db
-  schedule: "0 2 * * *"    # daily at 02:00 UTC
+  schedule: "0 0 2 * * *"  # daily at 02:00 UTC; CNPG schedules include seconds
   method: plugin
   pluginConfiguration:
     name: barman-cloud.cloudnative-pg.io
@@ -389,10 +389,10 @@ Quick validation command:
 ### 9.1 Immutable fields
 
 The following fields serve as Keycloak-side identifiers. Changing them after the resource is
-created would cause the operator to attempt an operation that Keycloak does not support (e.g.
-renaming a realm, changing a client's protocol type). The API server does not enforce
-immutability via `x-kubernetes-validations`; enforcement is handled in the reconciler, which
-logs an error and sets the resource to `Ready=false` if a change is detected.
+created can create duplicates, orphan Keycloak-side objects, or cause `keycloak-config-cli`
+to interpret the change as a delete/recreate operation. The API server does not enforce
+immutability via `x-kubernetes-validations`, and the current reconcilers do not reject these
+changes explicitly. Treat these fields as operationally immutable until validation is added.
 
 | Resource | Immutable field(s) | Reason |
 |---|---|---|
@@ -404,10 +404,12 @@ logs an error and sets the resource to `Ready=false` if a change is detected.
 | `IdentityProvider` | `spec.alias`, `spec.type`, `spec.realmRef` | Alias is the IdP identifier; `type` determines the protocol and cannot be switched in place |
 | `AuthFlow` | `spec.alias`, `spec.realmRef` | Flow alias is the Keycloak identifier |
 
-**To change an immutable field:** delete the CR and recreate it with the new value. The
-operator will delete the corresponding resource in Keycloak (via the finalizer) and recreate
-it. Take note of any dependent resources (e.g. clients that reference a realm by `realmRef`)
-— they will also require updating.
+**To change an immutable field:** delete the CR and recreate it with the new value. For
+non-Realm child resources, the finalizer path triggers a Realm sync so the old object is
+removed from the desired export before the new object is created. Realm CR deletion
+intentionally preserves the Keycloak realm. Take note of any dependent resources (e.g.
+clients that reference a realm by `realmRef`) - they will also require updating and
+post-change verification.
 
 ### 9.2 New optional fields
 

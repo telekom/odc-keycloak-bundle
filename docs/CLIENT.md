@@ -67,7 +67,9 @@ KeycloakInstance (via KRO)
     ├── Client
     ├── User
     ├── Group
-    └── ClientScope
+    ├── ClientScope
+    ├── AuthFlow
+    └── IdentityProvider
 ```
 
 For usage details and examples, see [USAGE.md](USAGE.md).
@@ -94,7 +96,10 @@ The Hybrid approach (Option 5) was selected as the working assumption, starting 
 
 POC experience with `Client` confirmed that the Bash-based operator pattern is straightforward to extend. The Keycloak Admin API for Realm, User, Group, and ClientScope is not significantly more complex than for Client. Extending the existing operator avoids introducing a second tool (`keycloak-config-cli`) into the OCM component, keeps the OCM footprint minimal (one operator image), eliminates dual maintenance paths, and provides continuous reconciliation for all resource types — not just clients.
 
-From `v0.2.0`, the single Custom Operator manages the full CRD hierarchy.
+From `v0.2.0`, the single Custom Operator manages the full CRD hierarchy. This decision
+was superseded by the 2026-03-19 Config-CLI Controller decision below; the current
+operator is Go/controller-runtime based and delegates Keycloak writes to
+`keycloak-config-cli`.
 
 ### Declarative Configuration Strategy — Revised for Enterprise OSS (2026-03-19)
 
@@ -106,9 +111,9 @@ The revised architecture leverages a lightweight **Go Operator** (using standard
 
 ### Federated vs. Monolithic Reconciler (2026-03-26)
 
-*Decision: Retain 6 distinct controllers (Federated Pattern) instead of a monolithic sync controller.*
+*Decision: Retain separate controllers (Federated Pattern) instead of a monolithic sync controller.*
 
-A proposal to consolidate the 6 child controllers (`Client`, `User`, etc.) into a single generic "Universal Reconciler" was rejected. While a monolithic approach reduces Go boilerplate, it compromises the core security and operational requirements of the project. 
+A proposal to consolidate the child controllers (`Client`, `User`, `Group`, `ClientScope`, `AuthFlow`, and `IdentityProvider`) into a single generic "Universal Reconciler" was rejected. While a monolithic approach reduces Go boilerplate, it compromises the core security and operational requirements of the project.
 
 Separate controllers remain the finalized architectural standard to ensure:
 - **Strict Finalizer Management** (Audit-proof deletion propagation).
@@ -123,9 +128,9 @@ Previously, the operator contained defensive Go code to filter out invalid Custo
 
 ### Full State Declarative Parity & Drift-Healing (2026-04-17)
 
-*Decision: Extend Realm, Client, and User CRDs to include all security-critical and UI-exposed attributes (e.g., OAuth Flows, Themes, SSL).*
+*Decision: Extend Realm, Client, and User CRDs to include selected security-critical and UI-exposed attributes (e.g., OAuth Flows, Themes, SSL).*
 
-Manual UI changes to Keycloak attributes like "Standard Flow" or "Login Theme" were previously not rectified by the operator because they lacked representation in the CRD schemas and the export builder. By adding these fields explicitly to the CRDs and the `keycloak-config-cli` JSON mapping, the operator now ensures 100% declarative enforcement (Drift-Healing) for the most commonly manipulated UI settings. This ensures architectural integrity and auditability in air-gapped environments.
+Manual UI changes to Keycloak attributes like "Standard Flow" or "Login Theme" were previously not rectified by the operator because they lacked representation in the CRD schemas and the export builder. By adding these fields explicitly to the CRDs and the `keycloak-config-cli` JSON mapping, the operator now enforces the most commonly manipulated UI settings declared in the CRDs. Full Keycloak Admin API parity is delegated to `keycloak-config-cli` at execution time, but only fields modeled in the CRDs are part of the Kubernetes API contract.
 
 ## Related Documents
 

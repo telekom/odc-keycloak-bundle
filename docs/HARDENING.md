@@ -1,6 +1,6 @@
 # Hardening Reference
 
-This document records the security controls applied to the keycloak-ocm deployment and
+This document records the security controls applied to the keycloak-bundle deployment and
 the rationale for any accepted deviations. Controls are referenced against the
 **CIS Kubernetes Benchmark v1.9** and the **CIS Keycloak Benchmark** where applicable.
 
@@ -46,11 +46,13 @@ would eliminate this deviation in a production hardening pass.
 | 5.1.1 Ensure cluster-admin role is not used unnecessarily | ✅ Applied | No workload binds `cluster-admin` |
 | 5.1.3 Minimize wildcard use in Roles and ClusterRoles | ✅ Applied | All verbs and resources are explicitly listed |
 | 5.1.5 Ensure default service accounts are not bound to active roles | ✅ Applied | All workloads use dedicated ServiceAccounts |
-| 5.1.6 Ensure service account tokens are not auto-mounted unnecessarily | ⚠️ Deviation | `automountServiceAccountToken` is not explicitly disabled on non-operator pods. The Keycloak pod requires pod-list access for KUBE_PING (see below). |
+| 5.1.6 Ensure service account tokens are not auto-mounted unnecessarily | ⚠️ Partial | `keycloak-config-cli` disables token automounting. Keycloak and operator pods still use service account tokens. The Keycloak ServiceAccount/RBAC is prepared for KUBE_PING, but the shipped Deployment does not currently enable `KC_CACHE_STACK=kubernetes`. |
 
 **Keycloak RBAC scope:** The `keycloak-pod-discovery` Role grants `get/list/watch` on
-`pods` within the instance namespace only. This is the minimum required by
-`KC_CACHE_STACK=kubernetes` (Infinispan KUBE_PING). No ClusterRole is used.
+`pods` within the instance namespace only. This is the permission set needed when
+`KC_CACHE_STACK=kubernetes` (Infinispan KUBE_PING) is enabled. The current manifests
+prepare this RBAC but do not set `KC_CACHE_STACK=kubernetes` by default. No ClusterRole
+is used for Keycloak pod discovery.
 
 **Operator RBAC scope:** The operator is granted namespace-scoped permissions to manage
 Keycloak CRDs and their dependent resources. No cluster-wide write access is granted.
@@ -63,7 +65,7 @@ ObjectStore, recovery Cluster) without a custom Keycloak backup controller.
 
 | Control | Status | Notes |
 |---------|--------|-------|
-| CIS K8s 5.3 — Network Policies | ⚠️ Deviation | No `NetworkPolicy` objects are deployed. In a production environment, ingress should be restricted to the Keycloak port (8080/8443) and Prometheus scrape port (9000). Egress should be limited to the database service. This deviation is accepted for the current delivery scope targeting dev/CI clusters without a CNI enforcing NetworkPolicy. |
+| CIS K8s 5.3 — Network Policies | ✅ Enforced | `keycloak-networkpolicy.yaml` restricts **ingress** to the Keycloak HTTP/HTTPS ports (8080/8443) from same-namespace and operator-namespace pods, the management port (9000) from Prometheus pods, and JGroups clustering (7800) between Keycloak peers. **Egress** is restricted to DNS (kube-system:53), the PostgreSQL database (`cnpg.io/cluster=keycloak-db`:5432), JGroups clustering peers (7800), the **Kubernetes API Server (443/6443)** for Infinispan `KUBE_PING` pod discovery, and OTLP tracing (observability:4317). Requires a CNI that enforces NetworkPolicy. |
 
 ---
 
@@ -75,7 +77,7 @@ ObjectStore, recovery Cluster) without a custom Keycloak backup controller.
 |---------|--------|----------------|
 | 5.4.1 Prefer using Secrets as files over environment variables | ⚠️ Partial | Database credentials are injected via `secretKeyRef` environment variables. Keycloak's external secret API requires env-var injection. Admin credentials use the same pattern. |
 | 5.4.2 Consider external secret management | ⚠️ Deviation | No external secret store (Vault, ESO) is integrated. Kubernetes Secrets provide the baseline. This is accepted for the current scope; external secret management is recommended for production. |
-| No plaintext credentials in code | ✅ Applied | Gitleaks runs on every PR and blocks merges on detected secrets. |
+| No plaintext credentials in code | ✅ Applied | Gitleaks runs on every PR and blocks detected secrets. The KRO schema references the bootstrap admin Secret by name/key and does not accept `spec.adminPassword` as a plaintext CR field. |
 
 ---
 
@@ -83,9 +85,9 @@ ObjectStore, recovery Cluster) without a custom Keycloak backup controller.
 
 | Control | Status | Implementation |
 |---------|--------|----------------|
-| Use specific image tags (not `latest`) | ✅ Applied | All images are pinned to a digest-equivalent SHA or semantic version tag (Keycloak: `26.5.5`, CNPG: `1.28.1`, busybox: `1.37`) |
-| CVE scanning | ✅ Applied | Trivy scans all images for HIGH/CRITICAL CVEs on every PR and weekly. Merges are blocked on unfixed critical CVEs. |
-| Image provenance | ✅ Applied | OCM component archive is signed (`ocm-sign.sh`) and signature is validated before deployment (`ocm-validate.sh`) |
+| Use specific image tags and digests | ✅ Applied | OCM image resources are digest-pinned for Keycloak `26.6.3`, PostgreSQL `18.4`, CNPG `1.29.1`, Prometheus Operator `0.91.0`, and `keycloak-config-cli`; the operator image is recorded as `keycloak-operator-image` using the immutable `OPERATOR_IMAGE_REF` supplied by CI or release tooling. |
+| CVE scanning | ✅ Applied | `.github/workflows/security.yml` runs Trivy and blocks HIGH/CRITICAL image findings for the same image versions recorded in the component descriptor. |
+| Image provenance | ✅ Applied | OCM component archive is signed (`ocm-sign.sh`) and signature is validated before deployment (`ocm-validate.sh`/`ocm-verify.sh`) |
 | Operator image non-root | ✅ Applied | Operator `Dockerfile` uses a non-root `distroless` base; runtime `securityContext` enforces non-root execution |
 
 ---
@@ -110,11 +112,11 @@ guidance for Keycloak deployments.
 
 | Control | Status | Notes |
 |---------|--------|-------|
-| TLS termination | ⚠️ Deviation | `KC_HTTP_ENABLED=true` and `KC_HOSTNAME_STRICT=false` are set for CI and dev cluster compatibility. In production, TLS should terminate at the ingress with HTTP disabled inside the cluster, or `KC_HTTPS_*` configured with a certificate. |
-| Admin credential rotation | ⚠️ Deviation | Bootstrap credentials are stored in the `keycloak-admin` secret. For production, provision and rotate this secret via external secret management or a one-time bootstrap flow. |
+| TLS termination | ⚠️ Deviation | `KC_HTTP_ENABLED=true`, `KC_PROXY_HEADERS=xforwarded`, and `KC_HOSTNAME_STRICT=false` are set for CI and dev cluster compatibility. In production, use a trusted reverse proxy configuration, restrict exposed paths, do not expose the management port externally, and prefer HTTPS/TLS passthrough or a validated edge-termination pattern. |
+| Admin credential rotation | ⚠️ Deviation | Standalone scripts create `keycloak-admin` dynamically when missing for development. KRO references an existing admin Secret and does not create it from CR values. For production, provision bootstrap credentials through an approved secret workflow and rotate/remove the bootstrap admin after setup. |
 | Structured logging | ✅ Applied | `KC_LOG_FORMAT=json` enables structured log output compatible with log aggregation pipelines. |
 | Metrics and health endpoints | ✅ Applied | `KC_HEALTH_ENABLED=true` and `KC_METRICS_ENABLED=true`; management port (9000) is not exposed externally via the Service. |
-| Session clustering | ✅ Applied | `KC_CACHE_STACK=kubernetes` enables Infinispan KUBE_PING for HA session sharing across replicas. |
+| Session clustering | ⚠️ Prepared, not enabled | ServiceAccount/RBAC and NetworkPolicy ports are prepared, but the shipped Keycloak Deployment and KRO RGD do not set `KC_CACHE_STACK=kubernetes`. Do not claim cross-pod session failover until this is enabled and tested. |
 
 ---
 
@@ -124,7 +126,7 @@ guidance for Keycloak deployments.
 |---|---------|-----------|---------------|
 | 1 | CIS K8s 5.2.6 | `readOnlyRootFilesystem` not set on Keycloak | Upstream image requires writable fs for Quarkus augmentation cache |
 | 2 | CIS K8s 5.1.6 | `automountServiceAccountToken` not disabled on non-operator pods | Keycloak requires service account token for KUBE_PING pod list |
-| 3 | CIS K8s 5.3 | No NetworkPolicy | Dev/CI cluster scope; CNI enforcement not available |
+| 3 | CIS K8s 5.3 | ~~No NetworkPolicy~~ **Resolved** | `keycloak-networkpolicy.yaml` now enforces ingress **and** egress (default-deny egress with explicit allows for DNS, database, clustering, and tracing). Requires a NetworkPolicy-capable CNI. |
 | 4 | CIS K8s 5.4.2 | No external secret store | Dev/CI scope; Kubernetes Secrets are baseline |
 | 5 | Keycloak TLS | HTTP enabled, strict hostname disabled | Dev/CI cluster compatibility; production requires TLS at ingress |
 | 6 | Seccomp on Keycloak server | `seccompProfile` not set | Upstream image compatibility; `RuntimeDefault` recommended for production |

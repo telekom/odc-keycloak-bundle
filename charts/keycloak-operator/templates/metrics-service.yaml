@@ -1,0 +1,16 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "keycloak-operator.fullname" . }}-metrics
+  labels:
+    {{- include "keycloak-operator.labels" . | nindent 4 }}
+spec:
+  ports:
+    - name: metrics
+      port: {{ .Values.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "keycloak-operator.selectorLabels" . | nindent 4 }}
+{{- end }}

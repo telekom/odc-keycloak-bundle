@@ -6,9 +6,16 @@ import (
 )
 
 type ClientScopeSpec struct {
+	// RealmRef is the name of the target Realm CR. It is mandatory: an empty
+	// or missing realmRef is rejected by admission and must never silently fall
+	// back to the privileged "master" realm (defense multi-tenant safety).
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9][a-zA-Z0-9_\-.]*$`
 	RealmRef string `json:"realmRef"`
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
 	Name        string            `json:"name"`
 	Protocol    string            `json:"protocol,omitempty"`
 	Description string            `json:"description,omitempty"`

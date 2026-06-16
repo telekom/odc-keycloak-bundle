@@ -27,18 +27,33 @@ spec:
         dbStorageSize:
           type: string
           default: "5Gi"
+        operatorImage:
+          type: string
+          default: "ghcr.io/opendefensecloud/keycloak-operator:0.3.0"
+          description: "Keycloak operator image; override with mirrored digest-pinned image for air-gapped releases"
+        configCliImage:
+          type: string
+          default: "quay.io/adorsys/keycloak-config-cli:latest-26@sha256:1b22dfaa9ae0c71f74b0342f9221a6510f272da5def683dbba26a98e6b1b1411"
+          description: "keycloak-config-cli image used by reconciliation Jobs"
         hostname:
           type: string
           default: ""
           description: "External hostname (optional, for production)"
-        adminUser:
+        adminSecretName:
           type: string
-          default: "admin"
-          description: "Initial admin username"
-        adminPassword:
+          default: "keycloak-admin"
+          minLength: 1
+          description: "Name of an existing Secret in the target namespace containing Keycloak bootstrap admin credentials"
+        adminUserSecretKey:
           type: string
-          default: "admin"
-          description: "Initial admin password (CHANGE ON FIRST LOGIN)"
+          default: "KEYCLOAK_ADMIN"
+          minLength: 1
+          description: "Secret key containing the Keycloak bootstrap admin username"
+        adminPasswordSecretKey:
+          type: string
+          default: "KEYCLOAK_ADMIN_PASSWORD"
+          minLength: 1
+          description: "Secret key containing the Keycloak bootstrap admin password"
     status:
       type: object
       properties:
@@ -72,7 +87,7 @@ spec:
           namespace: "{{ .spec.namespace }}"
         spec:
           # renovate: datasource=docker
-          imageName: ghcr.io/cloudnative-pg/postgresql:18.3@sha256:36f19b80864f5ae23bb6ce87166e413154bf8c1b705e893ec8360ebb4791e63e
+          imageName: ghcr.io/cloudnative-pg/postgresql:18.4@sha256:1a8ef3dc0dc214c1764660291b29a98288b13753c09e9981b86eaf0c75de8bdc
           instances: "{{ .spec.dbInstances }}"
           storage:
             size: "{{ .spec.dbStorageSize }}"
@@ -94,22 +109,7 @@ spec:
       dependsOn:
         - namespace
 
-    # 3. Keycloak Admin Secret
-    - id: keycloak-admin-secret
-      template:
-        apiVersion: v1
-        kind: Secret
-        metadata:
-          name: keycloak-admin
-          namespace: "{{ .spec.namespace }}"
-        type: Opaque
-        stringData:
-          KEYCLOAK_ADMIN: "{{ .spec.adminUser }}"
-          KEYCLOAK_ADMIN_PASSWORD: "{{ .spec.adminPassword }}"
-      dependsOn:
-        - namespace
-
-    # 4. Keycloak Deployment (Official Keycloak from Quay.io)
+    # 3. Keycloak Deployment (Official Keycloak from Quay.io)
     - id: keycloak-deployment
       template:
         apiVersion: apps/v1
@@ -137,7 +137,7 @@ spec:
               serviceAccountName: keycloak
               containers:
                 - name: keycloak
-                  image: quay.io/keycloak/keycloak:26.6.1@sha256:26ae26445475f7fac5f90ee138b1bdb64324f5815fb16133ffdbdb122d97c4d8
+                  image: quay.io/keycloak/keycloak:26.6.3@sha256:5fdbf2dbb5897cc34e82de49d13e23db011f9925089dbc555fc095f2c8bc1dac
                   args:
                     - start
                   ports:
@@ -180,20 +180,21 @@ spec:
                       value: "true"
                     - name: KC_METRICS_ENABLED
                       value: "true"
-                    # Proxy configuration
-                    - name: KC_PROXY
-                      value: edge
-                    # Admin credentials
-                    - name: KEYCLOAK_ADMIN
+                    # Proxy headers — replaces deprecated KC_PROXY=edge (removed in 26.x)
+                    - name: KC_PROXY_HEADERS
+                      value: xforwarded
+                    # Admin bootstrap credentials (KC_BOOTSTRAP_ADMIN_* replaces the
+                    # deprecated KEYCLOAK_ADMIN* names; the Secret keys are kept stable).
+                    - name: KC_BOOTSTRAP_ADMIN_USERNAME
                       valueFrom:
                         secretKeyRef:
-                          name: keycloak-admin
-                          key: KEYCLOAK_ADMIN
-                    - name: KEYCLOAK_ADMIN_PASSWORD
+                          name: "{{ .spec.adminSecretName }}"
+                          key: "{{ .spec.adminUserSecretKey }}"
+                    - name: KC_BOOTSTRAP_ADMIN_PASSWORD
                       valueFrom:
                         secretKeyRef:
-                          name: keycloak-admin
-                          key: KEYCLOAK_ADMIN_PASSWORD
+                          name: "{{ .spec.adminSecretName }}"
+                          key: "{{ .spec.adminPasswordSecretKey }}"
                   resources:
                     requests:
                       memory: "512Mi"
@@ -214,7 +215,6 @@ spec:
                     initialDelaySeconds: 90
                     periodSeconds: 10
       dependsOn:
-        - keycloak-admin-secret
         - postgres-cluster
 
     # 5. Keycloak Service
@@ -273,6 +273,24 @@ spec:
             app.kubernetes.io/name: keycloak-operator
             app.kubernetes.io/instance: "{{ .metadata.name }}"
             app.kubernetes.io/managed-by: kro
+      dependsOn:
+        - namespace
+
+    # 10b. Config-CLI ServiceAccount
+    # config-cli Job pods only call Keycloak's HTTP API and need no Kubernetes API
+    # access, so token automounting is disabled (least privilege / airgap hardening).
+    - id: config-cli-serviceaccount
+      template:
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: keycloak-config-cli
+          namespace: "{{ .spec.namespace }}"
+          labels:
+            app.kubernetes.io/name: keycloak-config-cli
+            app.kubernetes.io/instance: "{{ .metadata.name }}"
+            app.kubernetes.io/managed-by: kro
+        automountServiceAccountToken: false
       dependsOn:
         - namespace
 
@@ -396,20 +414,22 @@ spec:
               serviceAccountName: keycloak-operator
               containers:
                 - name: operator
-                  image: ghcr.io/opendefensecloud/keycloak-operator:0.2.0
+                  image: "{{ .spec.operatorImage }}"
                   imagePullPolicy: IfNotPresent
                   env:
+                    - name: METRICS_BIND_ADDRESS
+                      value: ":8080"
                     - name: KEYCLOAK_URL
                       value: "http://keycloak:8080"
                     - name: KEYCLOAK_USER
                       valueFrom:
                         secretKeyRef:
-                          name: keycloak-admin
-                          key: KEYCLOAK_ADMIN
+                          name: "{{ .spec.adminSecretName }}"
+                          key: "{{ .spec.adminUserSecretKey }}"
                     - name: KEYCLOAK_ADMIN_SECRET_NAME
-                      value: "keycloak-admin"
+                      value: "{{ .spec.adminSecretName }}"
                     - name: KEYCLOAK_ADMIN_SECRET_KEY
-                      value: "KEYCLOAK_ADMIN_PASSWORD"
+                      value: "{{ .spec.adminPasswordSecretKey }}"
                     - name: POD_NAME
                       valueFrom:
                         fieldRef:
@@ -420,6 +440,14 @@ spec:
                           fieldPath: metadata.namespace
                     - name: CHECK_INTERVAL
                       value: "30"
+                    # Config-CLI Job image — required, otherwise job_runner errors with
+                    # "config-cli image not configured". Digest-pinned for airgapped
+                    # supply-chain integrity (matches component-constructor.yaml).
+                    - name: CONFIG_CLI_IMAGE
+                      value: "{{ .spec.configCliImage }}"
+                    # Dedicated ServiceAccount for config-cli Job pods (no K8s API access).
+                    - name: CONFIG_CLI_SA_NAME
+                      value: "keycloak-config-cli"
                   resources:
                     requests:
                       cpu: 100m
@@ -429,7 +457,7 @@ spec:
                       memory: 128Mi
       dependsOn:
         - operator-rolebinding
-        - keycloak-admin-secret
+        - config-cli-serviceaccount
 
   # Status aggregation
   status:

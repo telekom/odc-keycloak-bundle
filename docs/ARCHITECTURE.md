@@ -4,19 +4,22 @@ This document describes the Keycloak-specific architecture within the OCM/KRO ec
 
 ## Overview
 
-The Keycloak OCM component bundles everything needed to deploy and operate one or more isolated Keycloak instances on Kubernetes -- including the identity server itself, its database backend, and the configuration layer. A single OCM component archive is the unit of distribution, transfer, and deployment.
+The Keycloak OCM component bundles the deployable runtime artifacts for one or more isolated Keycloak instances on Kubernetes -- including the identity server image, database image, supporting operator images, the Keycloak operator chart, CRDs, KRO ResourceGraphDefinition, generated SBOM, and Kubernetes manifests. A single OCM component archive is the unit of distribution, transfer, signature verification, and deployment. The Keycloak Operator image is represented as the `keycloak-operator-image` OCM resource; CI injects the immutable build image through `OPERATOR_IMAGE_REF`.
 
 ```text
 OCM Component
-├── Container Images
-│   ├── Keycloak
-│   ├── PostgreSQL
-│   └── Keycloak Operator
-├── Helm Charts
-│   └── keycloak-operator
-├── KRO ResourceGraphDefinition
-├── Kubernetes Manifests
-└── Documentation
+|-- Container Images
+|   |-- Keycloak
+|   |-- PostgreSQL
+|   |-- CloudNativePG operator
+|   |-- Prometheus Operator
+|   |-- keycloak-config-cli
+|   |-- Keycloak Operator
+|-- Helm Chart: keycloak-operator
+|-- Keycloak configuration CRDs
+|-- KRO ResourceGraphDefinition
+|-- Kubernetes manifests
+`-- CycloneDX SBOM
 ```
 
 ## Multi-Instance Model
@@ -28,11 +31,11 @@ Cluster
 ├── identity-site-1/        # Instance "site-1"
 │   ├── PostgreSQL (CNPG)
 │   ├── Keycloak
-│   └── Client Operator
+│   └── Keycloak Operator
 ├── identity-site-2/        # Instance "site-2"
 │   ├── PostgreSQL (CNPG)
 │   ├── Keycloak
-│   └── Client Operator
+│   └── Keycloak Operator
 └── cnpg-system/            # CloudNativePG operator (cluster-wide, installed once)
 ```
 
@@ -40,7 +43,7 @@ Isolation boundaries per namespace:
 
 - **Data** -- dedicated PostgreSQL cluster, no shared database
 - **Configuration** -- namespace-scoped CRDs, independent realms and clients
-- **Network** -- prepared default-deny NetworkPolicies (enforcement planned)
+- **Network** -- ingress NetworkPolicy for Keycloak pods; egress policy remains environment-specific and must be supplied by the platform baseline where required
 - **Access** -- RBAC scoped to the instance namespace
 - **Resources** -- per-namespace quotas (planned)
 
@@ -92,7 +95,7 @@ See [USAGE.md](USAGE.md) for usage details and examples, and [CLIENT.md](CLIENT.
 
 ## High Availability & Scalability
 
-Both Keycloak and the PostgreSQL backend support multi-replica deployments for production use.
+The implementation includes the primitives for multi-replica Keycloak and PostgreSQL deployments. PostgreSQL HA is managed by CloudNativePG. Keycloak multi-replica runtime must be validated in the target environment before it is treated as production session failover.
 
 ### Keycloak Replicas
 
@@ -110,7 +113,7 @@ A `PodDisruptionBudget` with `minAvailable: 1` prevents Kubernetes from evicting
 
 #### Cluster Session Sharing
 
-With `replicas > 1`, Keycloak activates Infinispan distributed caching (`KC_CACHE_STACK=kubernetes`) so that sessions created on one pod are valid on all others. This uses the Kubernetes JGroups KUBE_PING discovery protocol, which requires Keycloak pods to be able to list pods in their namespace. A dedicated `ServiceAccount` (`keycloak`) with a namespace-scoped `Role` and `RoleBinding` provides this access.
+The repository includes a dedicated `ServiceAccount` (`keycloak`) and namespace-scoped `Role`/`RoleBinding` prepared for Kubernetes-based Infinispan/JGroups discovery. The shipped standalone Deployment and KRO RGD do **not** currently set `KC_CACHE_STACK=kubernetes`, so session clustering is not enabled by default. For production HA, add and test the Keycloak cache-stack configuration and any required network policy egress/ingress before relying on cross-pod session failover.
 
 ### PostgreSQL HA
 
@@ -177,7 +180,7 @@ sequenceDiagram
     Job->>KC: Apply JSON declaratively via internal HTTP
     Job-->>Exec: Return Success/Failure
     Exec->>K8s: Clean up Secret & Job
-    Operator->>K8s: Update CRD Status (Ready)
+    Operator->>K8s: Update Realm status from Job result
 ```
 
 ### Federated Controller Pattern
@@ -192,11 +195,11 @@ Unlike a monolithic "Sync Engine" that watches all resources at once, the operat
 
 ## OCM Packaging
 
-The entire solution ships as a single OCM component containing all container images, Helm charts, manifests, and the KRO RGD. This enables:
+The solution ships as a single OCM component containing the runtime images, Helm chart, CRDs, manifests, KRO RGD, and SBOM listed in `component-constructor.yaml`. Repository documentation remains source-controlled alongside the component and is not currently a separate OCM resource.
 
-- **Air-gapped deployment** -- all artifacts are bundled, no external registry access required at deploy time
+- **Air-gapped deployment** -- referential images and charts are localized during OCM transfer with `--copy-resources`, so the target registry can serve the complete bundle
 - **Reproducibility** -- pinned versions for every dependency
-- **Transfer** -- `ocm transfer` moves the component between registries
+- **Transfer** -- `ocm transfer` moves the component between registries and rewrites copied resource access to the target registry
 - **Signing** -- component integrity verified via `ocm sign`
 
 ## Decision Record
@@ -205,19 +208,22 @@ The entire solution ships as a single OCM component containing all container ima
 
 *Decision: Package the Keycloak solution as a single OCM component containing all dependencies.*
 
-The OCM standard is a project-wide requirement for air-gapped deployment. Bundling everything into one component -- container images, Helm charts, KRO RGD, manifests, and documentation -- gives a single deployable unit that can be transferred between registries, version-tracked, and validated as a whole. The alternative of splitting into multiple OCM components was rejected because it adds coordination overhead without meaningful benefit for a solution of this size.
+The OCM standard is a project-wide requirement for air-gapped deployment. Bundling the runtime artifacts into one component -- container images, CRDs, the operator Helm chart, KRO RGD, manifests, and SBOM -- gives a single deployable unit that can be transferred between registries, version-tracked, signed, and validated as a whole. Repository documentation is kept beside the source and release process; it is not currently packaged as a standalone OCM resource.
 
 Component structure:
 
 ```text
 component-constructor.yaml
-├── keycloak-image (ociImage)
-├── postgres-image (ociImage)
-├── operator-image (ociImage)
-├── operator-chart (helmChart)
-├── keycloak-instance-rgd (blueprint)
-├── manifests (directory)
-└── docs (directory)
+|-- keycloak-image (ociImage)
+|-- postgres-image (ociImage)
+|-- cnpg-operator-image (ociImage)
+|-- prometheus-operator-image (ociImage)
+|-- keycloak-config-cli-image (ociImage)
+|-- realm/client/user/group/clientscope/authflow/identityprovider CRDs (kubernetes)
+|-- keycloak-instance-rgd (blueprint)
+|-- keycloak-operator (helmChart)
+|-- keycloak-bundle-sbom (sbom)
+`-- manifests (directory)
 ```
 
 ### Multi-Instance Isolation via Namespaces
@@ -234,3 +240,37 @@ Namespaces are the natural Kubernetes-native isolation mechanism. They provide R
 | Operator usage guide | [USAGE.md](USAGE.md) |
 | Operator strategy & ADR | [CLIENT.md](CLIENT.md) |
 | CI/CD pipeline | [CICD.md](CICD.md) |
+
+---
+
+## Operator reconcile flow
+
+The following sequence diagram shows how a `Realm` CR progresses from creation
+to a Realm-level `Ready=true` status via the config-cli Job. Child CRs only
+record that they delegated a Realm sync request; they do not currently receive
+independent Keycloak-side success status.
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant K8s as Kubernetes API
+    participant Op as Operator
+    participant Job as config-cli Job
+    participant KC as Keycloak
+
+    Dev->>K8s: apply Realm CR
+    K8s->>Op: reconcile event
+    Op->>K8s: BuildRealmExport (list Clients / Users / Groups …)
+    Op->>K8s: CreateOrUpdate config Secret
+    Op->>K8s: Create config-cli Job (GenerateName)
+    Op->>K8s: set Realm status Ready=false, Message="Config-CLI Job running"
+    K8s->>Job: schedule Pod
+    Job->>KC: POST /auth/admin/realms (import config)
+    Job-->>K8s: Job status = Succeeded
+    Op->>K8s: observe Job Complete condition
+    Op->>K8s: set Realm status Ready=true
+```
+
+If the Job fails (backoff limit exceeded), the operator sets `Ready=false` with
+the failure reason from the Job condition and requeues for the next reconcile
+cycle.

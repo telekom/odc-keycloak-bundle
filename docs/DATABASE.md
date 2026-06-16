@@ -43,11 +43,20 @@ The CNPG operator is installed once at the cluster level. Each Keycloak instance
 
 ### Operator Installation (cluster-wide, once)
 
+For connected development clusters, use the repository helper:
+
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.28/releases/cnpg-1.28.1.yaml
+./scripts/deploy/install-cnpg.sh 1.29.1
 ```
 
+For air-gapped production clusters, do not fetch the upstream URL at deployment time.
+Mirror and verify the `cnpg-operator-image` from the OCM component, then apply the
+approved CNPG release manifests from the internal artifact repository.
+
 ### Per-Instance PostgreSQL Cluster
+
+The OCM descriptor, standalone manifest, KRO RGD, and security scan workflow all reference
+the same digest-pinned PostgreSQL image: `ghcr.io/cloudnative-pg/postgresql:18.4`.
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1

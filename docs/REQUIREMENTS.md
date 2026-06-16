@@ -7,7 +7,7 @@
 | **Document ID** | SRS-KEYCLOAK-001 |
 | **Standard** | IREB / IEEE 29148:2018 |
 | **Project** | Contract Item 2.1 — Software-defined Keycloak solution |
-| **Repository** | https://github.com/opendefensecloud/keycloak-ocm |
+| **Repository** | https://github.com/opendefensecloud/keycloak-bundle |
 
 This document defines the requirements for the software-defined Keycloak solution
 distributed as an Open Component Model (OCM) component package. It is the authoritative
@@ -17,6 +17,32 @@ constraints it must satisfy.
 Each requirement carries a unique **REQ-XX** identifier and belongs to one of three
 delivery phases. The **Depends on** field lists direct prerequisite requirements by ID.
 Acceptance tests for each requirement are defined in [ATS.md](ATS.md).
+
+### Current implementation status
+
+This SRS records the target requirements and the current implementation surface. As of
+the current delivery branch, the following constraints are important for operators and
+auditors:
+
+- The OCM component bundles the Keycloak, PostgreSQL, CNPG, Prometheus Operator,
+  `keycloak-config-cli`, and Keycloak Operator image references, the Helm chart, CRDs,
+  KRO RGD, manifests, and SBOM. CI injects the immutable operator image reference through
+  `OPERATOR_IMAGE_REF`.
+- `KeycloakInstance` currently provisions CloudNativePG-backed PostgreSQL only; an
+  externally managed PostgreSQL endpoint is not exposed in the RGD schema.
+- `Realm` status is authoritative for the `keycloak-config-cli` Job result. Child
+  resources (`Client`, `User`, `Group`, `ClientScope`, `AuthFlow`,
+  `IdentityProvider`) set a delegated `Ready=False`/`JobRunning` status and do not
+  currently flip back to `Ready=True` after the Realm sync succeeds.
+- `AuthFlow` is a defense-profile toggle model (`requireMFA`) that emits a basic flow
+  with username/password and optional OTP. It is not a full generic Keycloak execution
+  tree and does not assign the flow as a realm default.
+- The manifests include HA primitives (PDB, rolling updates, RBAC, clustering ports),
+  but the shipped standalone Deployment and KRO RGD do not set
+  `KC_CACHE_STACK=kubernetes`; cross-pod session failover must not be assumed until
+  this is enabled and tested.
+- The KRO RGD references bootstrap admin credentials through Secret name/key fields and
+  no longer accepts `adminPassword` as a string parameter.
 
 ---
 
@@ -72,19 +98,23 @@ archive. This archive is the exclusive unit of distribution: it must be self-con
 signable, storable in any OCI-compatible registry, and transferable into air-gapped
 environments without external network access at deployment time.
 
-The archive shall include all container images with pinned versions and digests, all
-Kubernetes CRD YAML files, the KRO ResourceGraphDefinition, the operator Helm chart, and
-all supporting Kubernetes manifests.
+The archive shall include all runtime dependency images with pinned versions and digests,
+all Kubernetes CRD YAML files, the KRO ResourceGraphDefinition, the operator Helm chart,
+the SBOM, and all supporting Kubernetes manifests. The Keycloak Operator image is recorded
+as an OCM `ociImage` through the `keycloak-operator-image` resource. CI sets that reference
+to the immutable operator image tag built from the same commit.
 
 ### Acceptance Criteria
 
 1. A single `ocm` component archive can be built, signed, and pushed to an OCI-compatible
    registry using the provided CI scripts.
 2. The archive contains the Keycloak image, the PostgreSQL image, the CNPG operator image,
-   all CRD YAML files, the KRO RGD, and all Kubernetes manifests.
+   the Prometheus Operator image, the `keycloak-config-cli` image, all CRD YAML files,
+   the Keycloak Operator image, the KRO RGD, the Helm chart, the SBOM, and all Kubernetes manifests.
 3. All container image references use pinned digests or immutable tags.
 4. The archive can be transferred to a disconnected private registry and a full deployment
-   completed without any external network calls.
+   completed without external network calls once all component images, including the
+   Keycloak Operator image, are mirrored into the target registry.
 5. The component version is reflected consistently across all bundled resources.
 6. All included software is open-source; the component descriptor records the upstream
    source reference for each resource.
@@ -136,9 +166,9 @@ Acceptance tests: [ATS.md § REQ-02](ATS.md#req-02--multi-instance-namespace-iso
 | **Depends on** | REQ-02 |
 
 Each Keycloak instance shall use a dedicated, production-grade PostgreSQL database. The
-OCM package shall provision this database automatically as part of instance creation. An
-externally managed PostgreSQL cluster may alternatively be used by providing connection
-parameters through the instance CRD.
+OCM package shall provision this database automatically as part of instance creation.
+The current `KeycloakInstance` RGD provisions CloudNativePG-backed PostgreSQL; it does
+not yet expose fields for an externally managed PostgreSQL endpoint.
 
 The database shall be deployed via CloudNativePG (CNPG). Keycloak shall not start until
 database connectivity is confirmed. All database credentials shall be managed as Kubernetes
@@ -153,8 +183,8 @@ Secrets (see REQ-07).
    appears in any Deployment spec or log.
 4. The `KeycloakInstance` CR exposes fields to configure database replica count and storage
    size; changes are reflected in the CNPG Cluster CR.
-5. An external PostgreSQL instance can be used by providing connection details via the
-   instance CR, without the OCM package deploying a CNPG cluster.
+5. External PostgreSQL support is a future extension: the current instance CR does not
+   expose external host, database, user, or credential references.
 6. The CNPG cluster provides automatic failover; the Keycloak service remains available
    after a simulated primary pod failure.
 
@@ -181,14 +211,14 @@ Keycloak; all other resource types shall be removed upon CR deletion.
 
 ### Acceptance Criteria
 
-1. A `KeycloakRealm` CR creates or updates realm-level settings; deleting the CR does not
+1. A `Realm` CR creates or updates realm-level settings; deleting the CR does not
    remove the realm from Keycloak.
-2. A `KeycloakClient` CR creates, updates, and removes the corresponding OIDC or SAML
+2. A `Client` CR creates, updates, and removes the corresponding OIDC or SAML
    client when applied or deleted.
-3. A `KeycloakClientScope` CR manages scope definitions; deletion removes the scope.
-4. A `KeycloakGroup` CR manages group definitions and realm-role assignments; deletion
+3. A `ClientScope` CR manages scope definitions; deletion removes the scope.
+4. A `Group` CR manages group definitions and realm-role assignments; deletion
    removes the group.
-5. A `KeycloakUser` CR manages user accounts including group membership; deletion removes
+5. A `User` CR manages user accounts including group membership; deletion removes
    the user.
 6. All five resource types coexist in the same namespace and reconcile without mutual
    interference.
@@ -211,21 +241,23 @@ Acceptance tests: [ATS.md § REQ-04](ATS.md#req-04--core-declarative-crds--alpha
 
 The solution shall provide declarative CRDs for two additional Keycloak building blocks:
 **identity providers** (external IdP connections such as OIDC or SAML) and
-**authentication flows** (customisable step-by-step login sequences including MFA policies
-and conditional execution).
+**authentication flows** (the current CRD models a defense baseline flow with
+username/password and optional MFA).
 
 Identity provider secrets shall be referenced via Kubernetes Secret references and shall
-never be embedded as plaintext in a CR spec (see REQ-07). Authentication flow CRDs shall
-support the full Keycloak execution model: required, alternative, and conditional steps.
+never be embedded as plaintext in a CR spec (see REQ-07). The current AuthFlow CRD does
+not expose a generic Keycloak execution tree; it renders a basic flow and optionally adds
+OTP when `requireMFA: true`.
 Both CRD types shall be included in the OCM archive (REQ-01) and documented in
 [USAGE.md](USAGE.md) (REQ-13).
 
 ### Acceptance Criteria
 
-1. A `KeycloakIdentityProvider` CR configures an external OIDC or SAML IdP in Keycloak
+1. An `IdentityProvider` CR configures an external OIDC or SAML IdP in Keycloak
    and the configuration is updated when the CR is modified.
-2. A `KeycloakAuthFlow` CR defines a custom authentication flow and overrides the default
-   browser or direct-grant flow when assigned to a realm.
+2. An `AuthFlow` CR defines a named basic authentication flow with username/password and
+   optional required OTP. Assigning that flow as a realm default is not currently modeled
+   by the CRD.
 3. Deleting either CR removes the corresponding configuration from Keycloak.
 4. All secrets required by identity provider CRs are referenced via `secretKeyRef` and
    never stored as plaintext in any CR spec field.
@@ -250,24 +282,28 @@ synchronisation state through a `status` subresource in the Kubernetes API. Oper
 staff and automated tooling shall be able to determine whether a resource is synchronised,
 pending, or in error — without inspecting operator logs.
 
-Every CRD shall define a `status` subresource containing: a `ready` boolean, a
+Every CRD defines a `status` subresource containing: a `ready` boolean, a
 `keycloakId` string, a `lastSyncTime` timestamp, a human-readable `message`, and a
 `conditions` array with at least a `Ready` condition following the standard Kubernetes
-pattern. The operator shall update the status on every reconciliation cycle, on both
-success and failure paths.
+pattern. Current implementation status is asymmetric: `Realm` observes the
+`keycloak-config-cli` Job and records success/failure, while child CRs record that they
+delegated work to the Realm sync and remain `Ready=False` with reason `JobRunning`.
 
 ### Acceptance Criteria
 
-1. `kubectl get keycloakclient -o wide` displays a `READY` column reflecting the actual
-   synchronisation state.
-2. When Keycloak is unreachable, all affected CRs transition to `Ready=False` with a
-   descriptive error message within one reconciliation cycle.
-3. When connectivity is restored, the condition transitions back to `Ready=True`
-   automatically without manual intervention.
+1. `kubectl get client -o wide` and the other CRD print columns display a `READY`
+   column. For child CRs, `Ready=False`/`JobRunning` means the resource has delegated
+   the change to the Realm sync; inspect the owning `Realm` for the authoritative sync
+   result.
+2. When Keycloak is unreachable, the owning `Realm` transitions to `Ready=False` with
+   the config-cli Job failure reason. Child CRs do not currently receive independent
+   Keycloak-side failure propagation.
+3. When connectivity is restored, the `Realm` condition transitions back to `Ready=True`
+   automatically after a successful Job.
 4. `status.lastSyncTime` is updated on every reconciliation pass.
-5. `status.keycloakId` is populated with the Keycloak-internal identifier after the first
-   successful synchronisation.
-6. A failed creation or update includes the HTTP status code or error message in the
+5. `status.keycloakId` is populated with the realm name for `Realm`; child CRs do not
+   currently populate Keycloak-internal UUIDs.
+6. A failed Realm sync includes the config-cli Job failure reason in the
    `status.conditions[Ready].message` field.
 
 Acceptance tests: [ATS.md § REQ-06](ATS.md#req-06--cr-status-reporting--alpha)
@@ -289,7 +325,9 @@ spec field, operator source code, or log line.
 
 CRD fields that require credentials shall use a `secretKeyRef` pattern. Operator-generated
 credentials shall be stored as Secrets in the target namespace. Automated secret scanning
-in CI (see REQ-14) shall enforce this constraint on every pull request.
+in CI (see REQ-14) shall enforce this constraint on every pull request. The KRO
+`KeycloakInstance` references the bootstrap admin Secret by name and key and does not
+carry the admin password value.
 
 ### Acceptance Criteria
 
@@ -298,9 +336,9 @@ in CI (see REQ-14) shall enforce this constraint on every pull request.
 2. The Keycloak admin password is accessible only via a Kubernetes Secret.
 3. Database credentials are injected exclusively via `secretKeyRef` references.
 4. Client credential Secrets created for confidential clients are placed in the
-   `KeycloakClient` CR namespace and contain exactly the keys `CLIENT_ID` and
+   `Client` CR namespace and contain exactly the keys `CLIENT_ID` and
    `CLIENT_SECRET`.
-5. The `KeycloakUser` CRD accepts initial passwords only as a Secret reference; no
+5. The `User` CRD accepts initial passwords only as a Secret reference; no
    plaintext password field is present in the CRD spec.
 6. All CRD fields that would contain credentials use a `secretKeyRef` sub-object instead
    of a string value field.
@@ -318,20 +356,25 @@ Acceptance tests: [ATS.md § REQ-07](ATS.md#req-07--secure-secrets-management--p
 | **Depends on** | REQ-02, REQ-03 |
 
 The Keycloak deployment shall support multi-replica operation so that the loss of a single
-pod does not cause a service outage. Session data and distributed caches shall be shared
-across all replicas. The operator shall also support running as multiple replicas, with
-exactly one replica active as the reconciliation leader at any time.
+pod does not cause a service outage. The shipped manifests include the primitives needed
+for this mode, but session data and distributed caches are not shared across replicas by
+default until the Keycloak cache stack is explicitly enabled and validated. The operator
+supports running as multiple replicas, with exactly one replica active as the reconciliation
+leader at any time.
 
-Keycloak shall use Kubernetes-native cluster discovery (`KC_CACHE_STACK=kubernetes`) for
-Infinispan session sharing. A `PodDisruptionBudget` shall ensure at least one replica
+Production HA shall use Kubernetes-native cluster discovery (`KC_CACHE_STACK=kubernetes`)
+for Infinispan session sharing. The current standalone Deployment and KRO RGD do not set
+this environment variable. A `PodDisruptionBudget` shall ensure at least one replica
 remains available during voluntary disruptions. Replica counts for both Keycloak and the
 database shall be configurable via the `KeycloakInstance` CR.
 
 ### Acceptance Criteria
 
 1. A `KeycloakInstance` CR with `spec.replicas: 3` results in three Keycloak pods reaching
-   `Ready` state and forming a single Infinispan cluster.
-2. A session established on one pod remains valid after that pod is forcibly deleted.
+   `Ready` state. Single Infinispan cluster formation requires enabling and validating
+   `KC_CACHE_STACK=kubernetes`.
+2. A session established on one pod remains valid after that pod is forcibly deleted only
+   after Kubernetes cache-stack clustering has been enabled and tested.
 3. A `PodDisruptionBudget` with `minAvailable: 1` prevents all Keycloak pods from being
    simultaneously evicted.
 4. Only one operator replica holds the `Lease` resource at any given time.
@@ -360,7 +403,9 @@ cleanly remove all created resources.
 
 A `ResourceGraphDefinition` (RGD) shall encode the full dependency graph and be included
 in the OCM component archive (REQ-01). The `KeycloakInstance` CR schema shall expose only
-the parameters an operator genuinely needs to configure.
+the parameters an operator genuinely needs to configure. The current RGD exposes Secret
+name/key reference fields for bootstrap admin credentials; production packaging should
+provision the referenced Secret through an approved external secret workflow.
 
 ### Acceptance Criteria
 

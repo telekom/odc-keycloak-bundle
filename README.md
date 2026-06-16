@@ -15,7 +15,7 @@ A software-defined Keycloak solution packaged as an Open Component Model (OCM) c
 
 This repository contains a **standalone OCM component** for Keycloak, developed as a building block for the [opendefensecloud/ocm-components](https://github.com/opendefensecloud/ocm-components) project. Until integration, it operates independently with its own deployment scripts and CI/CD pipeline.
 
-The goal is to provide a fully reproducible, air-gap-capable Keycloak deployment that can be versioned, signed, and transferred as an OCM component archive. The solution includes a PostgreSQL database (via CloudNativePG), a Keycloak Client Operator for declarative client management, and multi-instance namespace isolation.
+The goal is to provide a fully reproducible, air-gap-capable Keycloak deployment that can be versioned, signed, and transferred as an OCM component archive. The solution includes a PostgreSQL database (via CloudNativePG), a namespace-scoped Keycloak Operator for declarative realm configuration, and multi-instance namespace isolation.
 
 > [!NOTE]
 > **Integration into opendefensecloud/ocm-components**
@@ -27,11 +27,11 @@ The goal is to provide a fully reproducible, air-gap-capable Keycloak deployment
 > independently.
 >
 > For integration the keycloak component archive -- containing the Keycloak container image,
-> Kubernetes manifests, the Client CRD, and the RGD -- will be transferred into the
+> Kubernetes manifests, the Keycloak configuration CRDs, and the RGD -- will be transferred into the
 > shared OCI registry of `ocm-components`. Deployment then works through KRO: a
 > `KeycloakInstance` custom resource triggers the RGD which creates an isolated namespace
 > (`keycloak-<instance>`) and orchestrates the full stack -- referencing the PostgreSQL OCM
-> component for the database, deploying Keycloak, and starting the client operator -- in the
+> component for the database, deploying Keycloak, and starting the Keycloak operator -- in the
 > correct startup order. Consumer teams never interact with this repository directly; they
 > declare `Client` CRs in their application repositories and the operator reconciles
 > them against the running Keycloak instance, syncing credentials back as Kubernetes Secrets.
@@ -42,17 +42,17 @@ The goal is to provide a fully reproducible, air-gap-capable Keycloak deployment
 
 ## Features
 
-- **OCM Packaging** -- All container images, manifests, and CRDs bundled into a single OCM component archive with versioning, signing, and OCI registry transfer for air-gapped environments
+- **OCM Packaging** -- Keycloak and supporting dependency images, including the Keycloak Operator image reference, CRDs, the operator Helm chart, the KRO RGD, a CycloneDX SBOM, and Kubernetes manifests are bundled into a signed OCM component archive for transfer into air-gapped environments. CI injects the immutable operator image reference through `OPERATOR_IMAGE_REF` when building the component.
 - **Automated CI/CD Pipeline** -- GitHub Actions workflow covering linting, ShellCheck, Gitleaks scanning, OCM build, sign, transfer, deployment, and smoke testing
 - **Multi-Instance Isolation** -- Each Keycloak instance runs in a dedicated, administrator-selected namespace with its own PostgreSQL database, secrets, and RBAC boundaries
-- **Declarative Kubernetes Configuration** -- Seven Kubernetes-native CRDs (`Realm`, `Client`, `ClientScope`, `Group`, `User`, `AuthFlow`, `IdentityProvider`) with a reconciling operator that syncs configuration to Keycloak and writes client credentials back as Kubernetes Secrets
+- **Declarative Kubernetes Configuration** -- Seven namespace-scoped Kubernetes CRDs (`Realm`, `Client`, `ClientScope`, `Group`, `User`, `AuthFlow`, `IdentityProvider`) with a reconciling operator that aggregates desired state into `realm.json`, applies it through `keycloak-config-cli`, and writes confidential-client credentials as Kubernetes Secrets
 - **KRO-Based Instantiation** -- A single `KeycloakInstance` CR triggers KRO to create the namespace, deploy PostgreSQL, and start Keycloak and its operator in the correct dependency order; deleting the CR removes everything cleanly
-- **High Availability** -- Configurable replica count for Keycloak and multi-instance PostgreSQL via CloudNativePG; health and readiness probes gate traffic to fully initialised pods
+- **High Availability Primitives** -- Configurable replica count for Keycloak and PostgreSQL via KRO/CNPG, rolling-update settings, readiness/liveness probes, operator leader election, and a PodDisruptionBudget. Session-clustering configuration is not currently enabled in the shipped Keycloak manifests and must be completed before claiming production session failover.
 - **Resilient Startup Sequence** -- Init containers wait for database availability, readiness and liveness probes monitor Keycloak health, and CNPG manages PostgreSQL primary pod election
 - **Observability** -- Structured JSON logging, OpenTelemetry tracing (opt-in via `KC_TRACING_ENABLED`), Prometheus metrics on management port 9000, and pre-built `ServiceMonitor`, `PodMonitor`, and `PrometheusRule` resources for Prometheus Operator
 - **Automated Dependency Updates** -- Renovate Bot configuration tracks upstream releases of Keycloak, CloudNativePG, and PostgreSQL images with digest pinning and automated PRs
-- **Security Hardened** -- Non-root containers with dropped capabilities, Gitleaks secret scanning, ShellCheck for scripts, and YAML linting in CI. The operator uses `SecretKeyRef` for all administrative credentials to ensure STIG/BSI compliance.
-- **Reproducible Deployments** -- Pinned image versions across all components, `--clean` flag for fresh CI environments, and deterministic OCM component archives
+- **Security Hardened** -- Non-root containers with dropped capabilities, namespace-scoped operator RBAC, ingress NetworkPolicy, Gitleaks secret scanning, ShellCheck for scripts, YAML linting, Trivy scanning, OCM signing, and generated CycloneDX SBOM evidence. Production deployments must still provide an external secret-management flow and a hardened TLS/hostname configuration.
+- **Reproducible Deployments** -- OCM component resources are versioned and image resources are digest-pinned; helper scripts support `--clean` for fresh CI environments and deterministic component archives
 
 ## Prerequisites
 

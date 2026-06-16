@@ -2,6 +2,7 @@ package wrapper
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -45,7 +46,7 @@ type ClientExport struct {
 	ImplicitFlowEnabled       *bool    `json:"implicitFlowEnabled,omitempty"`
 	DirectAccessGrantsEnabled *bool    `json:"directAccessGrantsEnabled,omitempty"`
 	ServiceAccountsEnabled    *bool    `json:"serviceAccountsEnabled,omitempty"`
-	Secret                    string   `json:"secret,omitempty"`
+	Secret                    string   `json:"secret,omitempty"` //nolint:gosec // G117: struct field mirrors the Keycloak API schema; not a hardcoded credential
 	RedirectUris              []string `json:"redirectUris,omitempty"`
 	WebOrigins                []string `json:"webOrigins,omitempty"`
 }
@@ -117,7 +118,7 @@ type IdentityProviderExport struct {
 func BuildRealmExport(ctx context.Context, c client.Client, namespace string, realm v1alpha1.Realm) (*RealmExport, error) {
 	realmName := realm.Spec.RealmName
 	if realmName == "" {
-		realmName = "master" // fallback though CRD should enforce it
+		return nil, fmt.Errorf("realm %q has empty spec.realmName; refusing to build export", realm.Name)
 	}
 
 	export := &RealmExport{
@@ -146,216 +147,244 @@ func BuildRealmExport(ctx context.Context, c client.Client, namespace string, re
 
 	// 1. Clients
 	var clientList v1alpha1.ClientList
-	if err := c.List(ctx, &clientList, client.InNamespace(namespace)); err == nil {
-		for _, item := range clientList.Items {
-			if !item.DeletionTimestamp.IsZero() {
-				continue
+	if err := c.List(ctx, &clientList, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("listing Clients: %w", err)
+	}
+	for _, item := range clientList.Items {
+		if !item.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if err := requireRealmRef("Client", item.Name, item.Spec.RealmRef); err != nil {
+			return nil, err
+		}
+		if item.Spec.RealmRef == realmName {
+			cEx := ClientExport{
+				ClientId:                  item.Spec.ClientID,
+				Name:                      item.Spec.Name,
+				Description:               item.Spec.Description,
+				Enabled:                   item.Spec.Enabled,
+				Protocol:                  item.Spec.Protocol,
+				PublicClient:              item.Spec.PublicClient,
+				StandardFlowEnabled:       item.Spec.StandardFlowEnabled,
+				ImplicitFlowEnabled:       item.Spec.ImplicitFlowEnabled,
+				DirectAccessGrantsEnabled: item.Spec.DirectAccessGrantsEnabled,
+				ServiceAccountsEnabled:    item.Spec.ServiceAccountsEnabled,
+				RedirectUris:              item.Spec.RedirectUris,
+				WebOrigins:                item.Spec.WebOrigins,
 			}
-			if getRealmRef(item.Spec.RealmRef) == realmName {
-				cEx := ClientExport{
-					ClientId:                  item.Spec.ClientID,
-					Name:                      item.Spec.Name,
-					Description:               item.Spec.Description,
-					Enabled:                   item.Spec.Enabled,
-					Protocol:                  item.Spec.Protocol,
-					PublicClient:              item.Spec.PublicClient,
-					StandardFlowEnabled:       item.Spec.StandardFlowEnabled,
-					ImplicitFlowEnabled:       item.Spec.ImplicitFlowEnabled,
-					DirectAccessGrantsEnabled: item.Spec.DirectAccessGrantsEnabled,
-					ServiceAccountsEnabled:    item.Spec.ServiceAccountsEnabled,
-					RedirectUris:              item.Spec.RedirectUris,
-					WebOrigins:                item.Spec.WebOrigins,
-				}
 
-				if item.Spec.PublicClient == nil || !*item.Spec.PublicClient {
-					var secret corev1.Secret
-					secretName := types.NamespacedName{Namespace: namespace, Name: item.Spec.ClientID + "-secret"}
-					if err := c.Get(ctx, secretName, &secret); err == nil {
-						if val, ok := secret.Data["CLIENT_SECRET"]; ok {
-							cEx.Secret = string(val)
-						}
-					}
+			if item.Spec.PublicClient == nil || !*item.Spec.PublicClient {
+				var secret corev1.Secret
+				secretName := types.NamespacedName{Namespace: namespace, Name: item.Spec.ClientID + "-secret"}
+				if err := c.Get(ctx, secretName, &secret); err != nil {
+					return nil, fmt.Errorf("getting secret %q for client %q: %w", secretName.Name, item.Spec.ClientID, err)
 				}
-				export.Clients = append(export.Clients, cEx)
+				if val, ok := secret.Data["CLIENT_SECRET"]; ok {
+					cEx.Secret = string(val)
+				}
 			}
+			export.Clients = append(export.Clients, cEx)
 		}
 	}
 
 	// 2. Client Scopes
 	var scopeList v1alpha1.ClientScopeList
-	if err := c.List(ctx, &scopeList, client.InNamespace(namespace)); err == nil {
-		for _, item := range scopeList.Items {
-			if !item.DeletionTimestamp.IsZero() {
-				continue
-			}
-			if getRealmRef(item.Spec.RealmRef) == realmName {
-				export.ClientScopes = append(export.ClientScopes, ClientScopeExport{
-					Name:        item.Spec.Name,
-					Protocol:    item.Spec.Protocol,
-					Description: item.Spec.Description,
-					Attributes:  item.Spec.Attributes,
-				})
-			}
+	if err := c.List(ctx, &scopeList, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("listing ClientScopes: %w", err)
+	}
+	for _, item := range scopeList.Items {
+		if !item.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if err := requireRealmRef("ClientScope", item.Name, item.Spec.RealmRef); err != nil {
+			return nil, err
+		}
+		if item.Spec.RealmRef == realmName {
+			export.ClientScopes = append(export.ClientScopes, ClientScopeExport{
+				Name:        item.Spec.Name,
+				Protocol:    item.Spec.Protocol,
+				Description: item.Spec.Description,
+				Attributes:  item.Spec.Attributes,
+			})
 		}
 	}
 
 	// 3. Groups
 	var groupList v1alpha1.GroupList
-	if err := c.List(ctx, &groupList, client.InNamespace(namespace)); err == nil {
-		for _, item := range groupList.Items {
-			if !item.DeletionTimestamp.IsZero() {
-				continue
-			}
-			if getRealmRef(item.Spec.RealmRef) == realmName {
-				export.Groups = append(export.Groups, GroupExport{
-					Name:       item.Spec.Name,
-					Path:       item.Spec.Path,
-					Attributes: item.Spec.Attributes,
-					RealmRoles: item.Spec.RealmRoles,
-				})
-			}
+	if err := c.List(ctx, &groupList, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("listing Groups: %w", err)
+	}
+	for _, item := range groupList.Items {
+		if !item.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if err := requireRealmRef("Group", item.Name, item.Spec.RealmRef); err != nil {
+			return nil, err
+		}
+		if item.Spec.RealmRef == realmName {
+			export.Groups = append(export.Groups, GroupExport{
+				Name:       item.Spec.Name,
+				Path:       item.Spec.Path,
+				Attributes: item.Spec.Attributes,
+				RealmRoles: item.Spec.RealmRoles,
+			})
 		}
 	}
 
 	// 4. Users
 	var userList v1alpha1.UserList
-	if err := c.List(ctx, &userList, client.InNamespace(namespace)); err == nil {
-		for _, item := range userList.Items {
-			if !item.DeletionTimestamp.IsZero() {
-				continue
+	if err := c.List(ctx, &userList, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("listing Users: %w", err)
+	}
+	for _, item := range userList.Items {
+		if !item.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if err := requireRealmRef("User", item.Name, item.Spec.RealmRef); err != nil {
+			return nil, err
+		}
+		if item.Spec.RealmRef == realmName {
+			userEx := UserExport{
+				Username:      item.Spec.Username,
+				Email:         item.Spec.Email,
+				FirstName:     item.Spec.FirstName,
+				LastName:      item.Spec.LastName,
+				Enabled:       item.Spec.Enabled,
+				EmailVerified: item.Spec.EmailVerified,
+				Groups:        item.Spec.Groups,
+				Attributes:    item.Spec.Attributes,
+				RealmRoles:    item.Spec.RealmRoles,
+				ClientRoles:   item.Spec.ClientRoles,
 			}
-			if getRealmRef(item.Spec.RealmRef) == realmName {
-				userEx := UserExport{
-					Username:      item.Spec.Username,
-					Email:         item.Spec.Email,
-					FirstName:     item.Spec.FirstName,
-					LastName:      item.Spec.LastName,
-					Enabled:       item.Spec.Enabled,
-					EmailVerified: item.Spec.EmailVerified,
-					Groups:        item.Spec.Groups,
-					Attributes:    item.Spec.Attributes,
-					RealmRoles:    item.Spec.RealmRoles,
-					ClientRoles:   item.Spec.ClientRoles,
-				}
 
-				if item.Spec.InitialPassword != nil {
-					var secret corev1.Secret
-					secretName := types.NamespacedName{Namespace: namespace, Name: item.Spec.InitialPassword.SecretName}
-					if err := c.Get(ctx, secretName, &secret); err == nil {
-						key := item.Spec.InitialPassword.SecretKey
-						if key == "" {
-							key = "password"
-						}
-						if val, ok := secret.Data[key]; ok {
-							userEx.Credentials = append(userEx.Credentials, CredentialExport{
-								Type:      "password",
-								Value:     string(val),
-								Temporary: true,
-							})
-						}
-					}
+			if item.Spec.InitialPassword != nil {
+				var secret corev1.Secret
+				secretName := types.NamespacedName{Namespace: namespace, Name: item.Spec.InitialPassword.SecretName}
+				if err := c.Get(ctx, secretName, &secret); err != nil {
+					return nil, fmt.Errorf("getting initial-password secret %q for user %q: %w", secretName.Name, item.Spec.Username, err)
 				}
-				export.Users = append(export.Users, userEx)
+				key := item.Spec.InitialPassword.SecretKey
+				if key == "" {
+					key = "password"
+				}
+				if val, ok := secret.Data[key]; ok {
+					userEx.Credentials = append(userEx.Credentials, CredentialExport{
+						Type:      "password",
+						Value:     string(val),
+						Temporary: true,
+					})
+				}
 			}
+			export.Users = append(export.Users, userEx)
 		}
 	}
 
 	// 5. Authentication Flows
 	var flowList v1alpha1.AuthFlowList
-	if err := c.List(ctx, &flowList, client.InNamespace(namespace)); err == nil {
-		for _, item := range flowList.Items {
-			if !item.DeletionTimestamp.IsZero() {
-				continue
+	if err := c.List(ctx, &flowList, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("listing AuthFlows: %w", err)
+	}
+	for _, item := range flowList.Items {
+		if !item.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if err := requireRealmRef("AuthFlow", item.Name, item.Spec.RealmRef); err != nil {
+			return nil, err
+		}
+		if item.Spec.RealmRef == realmName {
+			flowEx := AuthFlowExport{
+				Alias:       item.Spec.Alias,
+				Description: item.Spec.Description,
+				ProviderID:  "basic-flow",
+				TopLevel:    item.Spec.TopLevel,
+				BuiltIn:     false,
 			}
-			if getRealmRef(item.Spec.RealmRef) == realmName {
-				flowEx := AuthFlowExport{
-					Alias:       item.Spec.Alias,
-					Description: item.Spec.Description,
-					ProviderID:  "basic-flow",
-					TopLevel:    item.Spec.TopLevel,
-					BuiltIn:     false,
-				}
 
-				// Translate Defense Profile Toggles to executions
+			// Translate Defense Profile Toggles to executions
+			flowEx.AuthenticationExecutions = append(flowEx.AuthenticationExecutions, AuthExecutionExport{
+				Authenticator: "auth-username-password-form",
+				Requirement:   "REQUIRED",
+				Priority:      10,
+			})
+
+			if item.Spec.RequireMFA {
 				flowEx.AuthenticationExecutions = append(flowEx.AuthenticationExecutions, AuthExecutionExport{
-					Authenticator: "auth-username-password-form",
+					Authenticator: "auth-otp-form",
 					Requirement:   "REQUIRED",
-					Priority:      10,
+					Priority:      20,
 				})
-
-				if item.Spec.RequireMFA {
-					flowEx.AuthenticationExecutions = append(flowEx.AuthenticationExecutions, AuthExecutionExport{
-						Authenticator: "auth-otp-form",
-						Requirement:   "REQUIRED",
-						Priority:      20,
-					})
-				}
-
-				export.AuthenticationFlows = append(export.AuthenticationFlows, flowEx)
 			}
+
+			export.AuthenticationFlows = append(export.AuthenticationFlows, flowEx)
 		}
 	}
 
 	// 6. Identity Providers
 	var idpList v1alpha1.IdentityProviderList
-	if err := c.List(ctx, &idpList, client.InNamespace(namespace)); err == nil {
-		for _, item := range idpList.Items {
-			if !item.DeletionTimestamp.IsZero() {
-				continue
+	if err := c.List(ctx, &idpList, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("listing IdentityProviders: %w", err)
+	}
+	for _, item := range idpList.Items {
+		if !item.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if err := requireRealmRef("IdentityProvider", item.Name, item.Spec.RealmRef); err != nil {
+			return nil, err
+		}
+		if item.Spec.RealmRef == realmName {
+			idpEx := IdentityProviderExport{
+				Alias:                     item.Spec.Alias,
+				DisplayName:               item.Spec.DisplayName,
+				ProviderID:                item.Spec.Type,
+				Enabled:                   item.Spec.Enabled,
+				StoreToken:                item.Spec.StoreToken,
+				AddReadTokenRoleOnCreate:  item.Spec.AddReadTokenRoleOnCreate,
+				TrustEmail:                item.Spec.TrustEmail,
+				LinkOnly:                  item.Spec.LinkOnly,
+				FirstBrokerLoginFlowAlias: item.Spec.FirstBrokerLoginFlowAlias,
+				PostBrokerLoginFlowAlias:  item.Spec.PostBrokerLoginFlowAlias,
+				Config:                    make(map[string]string),
 			}
-			if getRealmRef(item.Spec.RealmRef) == realmName {
-				idpEx := IdentityProviderExport{
-					Alias:                     item.Spec.Alias,
-					DisplayName:               item.Spec.DisplayName,
-					ProviderID:                item.Spec.Type,
-					Enabled:                   item.Spec.Enabled,
-					StoreToken:                item.Spec.StoreToken,
-					AddReadTokenRoleOnCreate:  item.Spec.AddReadTokenRoleOnCreate,
-					TrustEmail:                item.Spec.TrustEmail,
-					LinkOnly:                  item.Spec.LinkOnly,
-					FirstBrokerLoginFlowAlias: item.Spec.FirstBrokerLoginFlowAlias,
-					PostBrokerLoginFlowAlias:  item.Spec.PostBrokerLoginFlowAlias,
-					Config:                    make(map[string]string),
-				}
 
-				// Copy static config
-				for k, v := range item.Spec.Config {
-					idpEx.Config[k] = v
-				}
-
-				// Resolve ClientSecretRef securely (OIDC)
-				if item.Spec.ClientSecretRef != nil {
-					var secret corev1.Secret
-					secretName := types.NamespacedName{Namespace: namespace, Name: item.Spec.ClientSecretRef.Name}
-					if err := c.Get(ctx, secretName, &secret); err == nil {
-						if val, ok := secret.Data[item.Spec.ClientSecretRef.Key]; ok {
-							idpEx.Config["clientSecret"] = string(val)
-						}
-					}
-				}
-
-				// Resolve SigningCertificateRef securely (SAML)
-				if item.Spec.SigningCertificateRef != nil {
-					var secret corev1.Secret
-					secretName := types.NamespacedName{Namespace: namespace, Name: item.Spec.SigningCertificateRef.Name}
-					if err := c.Get(ctx, secretName, &secret); err == nil {
-						if val, ok := secret.Data[item.Spec.SigningCertificateRef.Key]; ok {
-							idpEx.Config["signingCertificate"] = string(val)
-						}
-					}
-				}
-
-				export.IdentityProviders = append(export.IdentityProviders, idpEx)
+			// Copy static config
+			for k, v := range item.Spec.Config {
+				idpEx.Config[k] = v
 			}
+
+			// Resolve ClientSecretRef securely (OIDC)
+			if item.Spec.ClientSecretRef != nil {
+				var secret corev1.Secret
+				secretName := types.NamespacedName{Namespace: namespace, Name: item.Spec.ClientSecretRef.Name}
+				if err := c.Get(ctx, secretName, &secret); err != nil {
+					return nil, fmt.Errorf("getting OIDC client-secret %q for identity provider %q: %w", secretName.Name, item.Spec.Alias, err)
+				}
+				if val, ok := secret.Data[item.Spec.ClientSecretRef.Key]; ok {
+					idpEx.Config["clientSecret"] = string(val)
+				}
+			}
+
+			// Resolve SigningCertificateRef securely (SAML)
+			if item.Spec.SigningCertificateRef != nil {
+				var secret corev1.Secret
+				secretName := types.NamespacedName{Namespace: namespace, Name: item.Spec.SigningCertificateRef.Name}
+				if err := c.Get(ctx, secretName, &secret); err != nil {
+					return nil, fmt.Errorf("getting SAML signing-certificate %q for identity provider %q: %w", secretName.Name, item.Spec.Alias, err)
+				}
+				if val, ok := secret.Data[item.Spec.SigningCertificateRef.Key]; ok {
+					idpEx.Config["signingCertificate"] = string(val)
+				}
+			}
+
+			export.IdentityProviders = append(export.IdentityProviders, idpEx)
 		}
 	}
 
 	return export, nil
 }
 
-func getRealmRef(ref string) string {
+func requireRealmRef(kind, name, ref string) error {
 	if ref == "" {
-		return "master"
+		return fmt.Errorf("%s %q has empty realmRef; refusing to export to the privileged master realm", kind, name)
 	}
-	return ref
+	return nil
 }

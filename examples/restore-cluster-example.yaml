@@ -9,7 +9,7 @@ metadata:
 spec:
   # imageName must match the source cluster's PostgreSQL version to avoid
   # restore failures due to major-version mismatches.
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.3
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.4@sha256:1a8ef3dc0dc214c1764660291b29a98288b13753c09e9981b86eaf0c75de8bdc
   instances: 1
   bootstrap:
     recovery:

@@ -5,7 +5,7 @@ metadata:
   name: keycloak-db
 spec:
   # renovate: datasource=docker
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.3
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.4@sha256:1a8ef3dc0dc214c1764660291b29a98288b13753c09e9981b86eaf0c75de8bdc
   instances: 1
 
   storage:

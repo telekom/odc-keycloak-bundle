@@ -31,7 +31,7 @@ type ClientReconciler struct {
 // +kubebuilder:rbac:groups=keycloak.opendefense.cloud,resources=clients/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=keycloak.opendefense.cloud,resources=clients/finalizers,verbs=update
 // +kubebuilder:rbac:groups=keycloak.opendefense.cloud,resources=realms,verbs=get;update
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update
 
 func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
@@ -69,6 +69,7 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		log.Error(err, "sync failed", "clientId", obj.Spec.ClientID)
 		r.Recorder.Eventf(&obj, corev1.EventTypeWarning, "SyncFailed", "Failed to delegate sync: %v", err)
 		err2 := UpdateStatusWithRetry(ctx, r.Client, req.NamespacedName, &obj, func(latest *v1alpha1.Client) {
+			latest.Status.ObservedGeneration = latest.Generation
 			setFailed(&latest.Status.CommonStatus, err.Error())
 		})
 		if err2 != nil {
@@ -81,9 +82,10 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 }
 
 func (r *ClientReconciler) sync(ctx context.Context, obj *v1alpha1.Client) error {
+	// realmRef is mandatory; never fall back to the privileged "master" realm.
 	realmName := obj.Spec.RealmRef
 	if realmName == "" {
-		realmName = "master"
+		return fmt.Errorf("realmRef is required and must not be empty")
 	}
 
 	// For confidential clients, generate the secret if it doesn't exist yet,
@@ -109,6 +111,12 @@ func (r *ClientReconciler) sync(ctx context.Context, obj *v1alpha1.Client) error
 					"CLIENT_SECRET": secretValue,
 				},
 			}
+			// Tie the secret's lifecycle to the Client CR so Kubernetes GC removes it
+			// when the CR is deleted. Prevents orphaned credentials lingering in the
+			// namespace (credential-leakage / compliance risk in airgapped environments).
+			if err := controllerutil.SetOwnerReference(obj, desired, r.Scheme); err != nil {
+				return fmt.Errorf("failed to set owner reference on client secret: %w", err)
+			}
 			if err := r.Create(ctx, desired); err != nil {
 				return fmt.Errorf("failed to create client secret: %w", err)
 			}
@@ -120,7 +128,11 @@ func (r *ClientReconciler) sync(ctx context.Context, obj *v1alpha1.Client) error
 	if err := TriggerRealmSync(ctx, r.Client, obj.Namespace, realmName); err != nil {
 		return err
 	}
-	setReady(&obj.Status.CommonStatus, obj.Spec.ClientID, "Delegated to Realm Sync")
+	obj.Status.ObservedGeneration = obj.Generation
+	// Status truthfulness: the config-cli Job has not run yet, so the Client is
+	// only Pending/Syncing, not Ready. Realm status records the final Job result;
+	// child success back-propagation is not implemented yet.
+	setPending(&obj.Status.CommonStatus, "Delegated to Realm Sync — awaiting Job completion")
 	return r.Status().Update(ctx, obj)
 }
 

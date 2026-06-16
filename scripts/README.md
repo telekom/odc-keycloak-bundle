@@ -1,7 +1,10 @@
 # Keycloak Deployment Scripts
 
-This directory contains shell scripts for building, deploying, and verifying the Keycloak OCM component.
-Scripts are designed to be portable and are used across manual CLI workflows and GitHub Actions.
+This directory contains CI and connected-development scripts for building, deploying, and verifying the
+Keycloak OCM component. Scripts are designed to be portable and idempotent. For defense air-gapped
+production, mirror all referenced artifacts first and use internally approved manifests/registries rather
+than allowing helper scripts to fetch upstream release URLs. Local development helper scripts (e.g. secret
+generation) belong in `hack/`, not here.
 The full observability stack (Prometheus Operator, Jaeger) is installed automatically by `deploy-all.sh`
 and verified end-to-end by `tests/test-observability.sh`.
 
@@ -56,7 +59,7 @@ Before running these scripts, ensure you have:
 | `deploy/deploy-all.sh` | ✅ | ✅ | **Main Entry Point**: Deploys full stack (CNPG + Prometheus Operator + Jaeger + Keycloak + Operator + monitoring manifests). Accepts `--namespace NS` (administrator-controlled target namespace), `--clean` (delete and recreate namespace), and `--no-monitoring` (skip observability components). |
 | `deploy/cleanup.sh` | ✅ | ✅ | Removes a specific instance/namespace. |
 | `deploy/install-cnpg.sh` | ✅ | ✅ | Installs CloudNativePG operator (idempotent; checks first). |
-| `deploy/install-prometheus-operator.sh` | ✅ | ✅ | Installs Prometheus Operator v0.80.1 via upstream bundle (idempotent; called by `deploy-all.sh`). |
+| `deploy/install-prometheus-operator.sh` | ✅ | ✅ | Installs Prometheus Operator v0.91.0 via upstream bundle (idempotent; called by `deploy-all.sh`). |
 | `deploy/install-jaeger.sh` | ✅ | ✅ | Deploys Jaeger all-in-one (in-memory) into the `observability` namespace for OTEL tracing (idempotent; called by `deploy-all.sh`). |
 | `utils/status.sh` | ✅ | ✅ | **Smoke Test**: Checks Pods, Services, and HTTP Health. |
 | `tests/test-crd-smoke.sh` | ✅ | ✅ | **Verification (Fast)**: Realm foundation, CRD create/read checks, coexistence checks. |
@@ -79,11 +82,19 @@ For `incluster-minio`, the helper reuses existing MinIO root credentials by defa
 ### GitHub Actions (Primary)
 The `.github/workflows/ci.yml` is the primary pipeline for this project. It runs on every commit/PR and performs:
 1. Linting (YAML, ShellCheck, Gitleaks)
-2. Build & Sign (OCM)
-3. Transfer (to OCI Registry)
-4. Deploy & Verify (Smoke Tests + CRD Tests)
-5. Backup & Restore Verify (`setup-backup-provider.sh` + `test-backup-restore.sh --live`, supports `external-s3` and `incluster-minio`)
-6. Observability Verify (`test-observability.sh` — ServiceMonitor, PodMonitor, OTEL tracing, alert rules)
+2. Build and push the Keycloak Operator image
+3. Build, sign, and validate the OCM component
+4. Transfer the OCM component to an OCI registry
+5. Deploy & Verify (Smoke Tests + CRD Tests)
+6. Backup & Restore Verify (`setup-backup-provider.sh` + `test-backup-restore.sh --live`, supports `external-s3` and `incluster-minio`)
+7. Observability Verify (`test-observability.sh` — ServiceMonitor, PodMonitor, OTEL tracing, alert rules)
+
+Current packaging note: the OCM component includes a `keycloak-operator-image` resource. CI supplies its immutable value through `OPERATOR_IMAGE_REF` and sets `SOURCE_REPO_URL`, `SOURCE_REF`, and `SOURCE_COMMIT` for source provenance. Manual release builds must set `OPERATOR_IMAGE_REF` to the mirrored operator image reference, `SOURCE_REF` to a valid Git ref such as `refs/heads/main` or a release tag, and `SOURCE_COMMIT` to the exact delivered commit before running `scripts/ocm/ocm-create.sh`.
+
+Publishing note: `OCM_REGISTRY` is the registry namespace base (`ghcr.io/<org>`). In CI,
+non-dev repositories on `main` publish `${OCM_REGISTRY}/keycloak-operator` and transfer
+the OCM component to `OCM_REGISTRY`. Repositories ending in `-dev` publish only
+`${OCM_REGISTRY}/keycloak-operator-dev` and do not transfer release OCM components.
 
 ## Usage Examples
 
@@ -96,14 +107,28 @@ The `.github/workflows/ci.yml` is the primary pipeline for this project. It runs
 # Mandatory before deployment in restricted/air-gapped environments
 ./scripts/ocm/ocm-verify.sh ocm-output/keycloak-bundle-ctf.tar.gz ./security/ocm-signing-public-key.pub
 
-# Transfer to Registry
-./scripts/ocm/ocm-transfer.sh --user <user> --password <pass>
+# Transfer to Registry. Set OCM_REGISTRY to the registry namespace, for example
+# ghcr.io/<org>, or pass that target as the second argument. By default, this
+# localizes referenced OCM resources with --copy-resources so the target registry
+# can serve an air-gapped bundle.
+OCM_REGISTRY=ghcr.io/<org> \
+  ./scripts/ocm/ocm-transfer.sh --user <user> --password <pass>
 
 # Optional: immutable mode (fails if version already exists)
-OCM_TRANSFER_IMMUTABLE=true ./scripts/ocm/ocm-transfer.sh --user <user> --password <pass>
+OCM_REGISTRY=ghcr.io/<org> \
+  OCM_TRANSFER_IMMUTABLE=true \
+  ./scripts/ocm/ocm-transfer.sh --user <user> --password <pass>
+
+# Optional: connected-only debug mode (keeps external references)
+OCM_REGISTRY=ghcr.io/<org> \
+  OCM_TRANSFER_COPY_RESOURCES=false \
+  ./scripts/ocm/ocm-transfer.sh --user <user> --password <pass>
 
 # Optional: explicit overwrite mode (default)
-./scripts/ocm/ocm-transfer.sh --overwrite --user <user> --password <pass>
+./scripts/ocm/ocm-transfer.sh \
+  ocm-output/keycloak-bundle-ctf.tar.gz \
+  ghcr.io/<org> \
+  --overwrite --user <user> --password <pass>
 ```
 
 ### 2. Deploy to Cluster

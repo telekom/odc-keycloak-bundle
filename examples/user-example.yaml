@@ -20,5 +20,5 @@ spec:
   clientRoles:
     "account": ["view-profile"]
   initialPassword:
-    secretName: jane-doe-initial-password  # kubectl create secret generic jane-doe-initial-password --from-literal=password=changeme
+    secretName: jane-doe-initial-password  # kubectl create secret generic jane-doe-initial-password --from-literal=password=<REPLACE_ME>
     secretKey: password

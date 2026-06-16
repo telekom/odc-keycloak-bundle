@@ -63,7 +63,7 @@ SKIP_MONITORING=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -c|--clean)
+        -c | --clean)
             CLEAN=true
             shift
             ;;
@@ -116,25 +116,25 @@ if [[ "$CLEAN" == "true" ]]; then
             warn "Namespace $NAMESPACE still exists after initial wait (phase=$PHASE)."
 
             if [[ "$PHASE" == "Terminating" ]]; then
-                    grace_timeout_seconds=300
-                    grace_check_interval_seconds=90
-                    grace_start=""
-                    elapsed=0
-                    remaining=0
-                    sleep_for=0
+                grace_timeout_seconds=300
+                grace_check_interval_seconds=90
+                grace_start=""
+                elapsed=0
+                remaining=0
+                sleep_for=0
 
                 info "Applying additional grace wait for terminating namespace (${grace_timeout_seconds}s, check interval ${grace_check_interval_seconds}s)..."
                 grace_start="$(date +%s)"
 
                 while kubectl get namespace "$NAMESPACE" &>/dev/null; do
-                    elapsed="$(( $(date +%s) - grace_start ))"
-                    if (( elapsed >= grace_timeout_seconds )); then
+                    elapsed="$(($(date +%s) - grace_start))"
+                    if ((elapsed >= grace_timeout_seconds)); then
                         break
                     fi
 
-                    remaining="$(( grace_timeout_seconds - elapsed ))"
+                    remaining="$((grace_timeout_seconds - elapsed))"
                     sleep_for="$grace_check_interval_seconds"
-                    if (( remaining < sleep_for )); then
+                    if ((remaining < sleep_for)); then
                         sleep_for="$remaining"
                     fi
                     sleep "$sleep_for"
@@ -171,9 +171,9 @@ if [[ "$CLEAN" == "true" ]]; then
             FINALIZERS=$(kubectl get namespace "$NAMESPACE" -o jsonpath='{.spec.finalizers}' 2>/dev/null || echo "unknown")
             warn "Namespace $NAMESPACE still exists after cleanup (phase=$PHASE, finalizers=$FINALIZERS)."
             warn "Remaining namespaced objects (first 100 lines):"
-            kubectl api-resources --verbs=list --namespaced -o name 2>/dev/null \
-              | xargs -n 1 kubectl get -n "$NAMESPACE" --ignore-not-found -o name 2>/dev/null \
-              | head -n 100 || true
+            kubectl api-resources --verbs=list --namespaced -o name 2>/dev/null |
+                xargs -n 1 kubectl get -n "$NAMESPACE" --ignore-not-found -o name 2>/dev/null |
+                head -n 100 || true
             fail "Cleanup did not fully complete; refusing to deploy into a terminating namespace." 1
         fi
     else
@@ -196,14 +196,14 @@ fi
 # The CRD may exist while the operator pod is restarting (e.g. after a node drain),
 # which causes "no endpoints available for service cnpg-webhook-service" on apply.
 kubectl wait --for=condition=available --timeout=120s \
-    deployment/cnpg-cloudnative-pg -n cnpg-system \
-    || fail "CNPG controller-manager did not become available" 1
+    deployment/cnpg-cloudnative-pg -n cnpg-system ||
+    fail "CNPG controller-manager did not become available" 1
 
 info "Waiting for CNPG webhook endpoints to be populated..."
 timeout 60s bash -c \
     "until kubectl get endpoints cnpg-webhook-service -n cnpg-system 2>/dev/null \
-         | grep -v '<none>' | grep -q '[0-9]'; do sleep 2; done" \
-    || fail "CNPG webhook endpoints did not become available" 1
+         | grep -v '<none>' | grep -q '[0-9]'; do sleep 2; done" ||
+    fail "CNPG webhook endpoints did not become available" 1
 info "CNPG webhook ready."
 
 # Check/install Prometheus Operator and Jaeger (unless skipped)
@@ -269,8 +269,8 @@ fi
 # Deploy Keycloak
 "$SCRIPT_DIR/deploy-keycloak.sh" "$NAMESPACE" || fail "Keycloak deployment failed" 3
 
-# Deploy Client Operator
-"$SCRIPT_DIR/deploy-operator.sh" "$NAMESPACE" || fail "Client Operator deployment failed" 4
+# Deploy Keycloak Operator
+"$SCRIPT_DIR/deploy-operator.sh" "$NAMESPACE" || fail "Keycloak Operator deployment failed" 4
 
 # Apply monitoring manifests (unless skipped)
 if [[ "$SKIP_MONITORING" == "false" ]]; then
@@ -283,12 +283,12 @@ if [[ "$SKIP_MONITORING" == "false" ]]; then
 
     info "Waiting for Prometheus StatefulSet to be created by operator..."
     timeout 120s bash -c \
-        "until kubectl get statefulset prometheus-keycloak -n $NAMESPACE &>/dev/null; do sleep 2; done" \
-        || fail "Prometheus StatefulSet was not created by operator" 5
+        "until kubectl get statefulset prometheus-keycloak -n $NAMESPACE &>/dev/null; do sleep 2; done" ||
+        fail "Prometheus StatefulSet was not created by operator" 5
 
     info "Waiting for Prometheus StatefulSet to be ready (timeout 120s)..."
-    kubectl rollout status statefulset/prometheus-keycloak -n "$NAMESPACE" --timeout=120s \
-        || fail "Prometheus StatefulSet did not become ready" 5
+    kubectl rollout status statefulset/prometheus-keycloak -n "$NAMESPACE" --timeout=120s ||
+        fail "Prometheus StatefulSet did not become ready" 5
     info "Prometheus instance ready."
 fi
 
@@ -298,17 +298,17 @@ info "Instance name: $INSTANCE_NAME"
 info ""
 info "Next steps:"
 info "  1. Port-forward: ./scripts/utils/portforward.sh $INSTANCE_NAME $NAMESPACE"
-info "  2. Open: http://localhost:8080 (admin/admin)"
-info "  3. Install CRD: kubectl apply -f charts/keycloak-operator/crds/"
-info "  4. Create client: kubectl apply -f examples/client-example.yaml -n $NAMESPACE"
+info "  2. Open: http://localhost:8080"
+info "  3. Retrieve admin credentials from Secret: kubectl get secret keycloak-admin -n $NAMESPACE -o yaml"
+info "  4. Apply Keycloak CRs, for example: kubectl apply -f examples/client-example.yaml -n $NAMESPACE"
 if [[ "$SKIP_MONITORING" == "false" ]]; then
-info ""
-info "Observability:"
-info "  Jaeger UI:    kubectl port-forward -n observability svc/jaeger 16686:16686"
-info "  Metrics:      kubectl port-forward -n $NAMESPACE svc/keycloak 9000:9000"
-info "                curl http://localhost:9000/metrics"
-info "  Prometheus:   kubectl port-forward -n $NAMESPACE svc/prometheus 9090:9090"
-info "                curl http://localhost:9090/api/v1/alerts"
+    info ""
+    info "Observability:"
+    info "  Jaeger UI:    kubectl port-forward -n observability svc/jaeger 16686:16686"
+    info "  Metrics:      kubectl port-forward -n $NAMESPACE svc/keycloak 9000:9000"
+    info "                curl http://localhost:9000/metrics"
+    info "  Prometheus:   kubectl port-forward -n $NAMESPACE svc/prometheus 9090:9090"
+    info "                curl http://localhost:9090/api/v1/alerts"
 fi
 info ""
 info "To remove this instance:"
