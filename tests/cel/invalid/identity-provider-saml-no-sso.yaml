@@ -1,0 +1,12 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: IdentityProvider
+metadata:
+  name: cel-test-saml-no-sso
+spec:
+  realmRef: master
+  alias: cel-test-saml-no-sso
+  type: saml
+  enabled: true
+  config:
+    nameIDPolicyFormat: urn:oasis:names:tc:SAML:2.0:nameid-format:persistent
+    # singleSignOnServiceUrl is absent — CEL rule requires it for saml

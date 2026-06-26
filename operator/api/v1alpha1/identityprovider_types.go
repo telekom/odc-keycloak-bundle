@@ -6,6 +6,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// +kubebuilder:validation:XValidation:rule="self.type != 'oidc' || (has(self.config) && (('issuerUrl' in self.config && size(self.config['issuerUrl']) > 0) || ('authorizationUrl' in self.config && size(self.config['authorizationUrl']) > 0)))",message="config must contain non-empty issuerUrl or authorizationUrl for OIDC identity providers"
+// +kubebuilder:validation:XValidation:rule="self.type != 'saml' || (has(self.config) && 'singleSignOnServiceUrl' in self.config && size(self.config['singleSignOnServiceUrl']) > 0)",message="config.singleSignOnServiceUrl is required for SAML identity providers"
 // IdentityProviderSpec defines the desired state of IdentityProvider
 type IdentityProviderSpec struct {
 	// RealmRef is the name of the target Realm CR. It is mandatory: an empty

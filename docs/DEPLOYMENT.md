@@ -32,7 +32,7 @@ The component is published to an OCI registry by the CI/CD pipeline (see [CICD.m
 > **Air-Gapped Deployment:** If deploying into a disconnected/air-gapped environment, use `scripts/ocm/ocm-transfer.sh` or `ocm transfer component --copy-resources` to mirror the entire bundle—including all referenced OCI images and Helm charts—to your internal registry.
 > ```bash
 > ocm transfer component --copy-resources \
->   ghcr.io/opendefensecloud//opendefense.cloud/keycloak-bundle:0.3.0 \
+>   ghcr.io/opendefensecloud//opendefense.cloud/keycloak-bundle:0.3.1 \
 >   your-internal-registry.local/mirror
 > ```
 > Afterward, target your internal registry for the subsequent steps.
@@ -41,7 +41,7 @@ The component is published to an OCI registry by the CI/CD pipeline (see [CICD.m
 
 ```bash
 COMPONENT=opendefense.cloud/keycloak-bundle
-VERSION=0.3.0
+VERSION=0.3.1
 REGISTRY=ghcr.io/opendefensecloud
 
 ocm get componentversions "$REGISTRY//$COMPONENT:$VERSION"
@@ -53,6 +53,7 @@ The component contains:
 | Resource | Type | Description |
 |----------|------|-------------|
 | `keycloak-image` | ociImage | Keycloak server |
+| `busybox-image` | ociImage | `wait-for-db` initContainer used by the standalone Keycloak Deployment |
 | `postgres-image` | ociImage | PostgreSQL database |
 | `cnpg-operator-image` | ociImage | CloudNativePG operator |
 | `prometheus-operator-image` | ociImage | Prometheus Operator for optional monitoring |
@@ -238,6 +239,18 @@ kubectl get pods -n identity-dev
 Deleting the `KeycloakInstance` CR removes the resources managed by KRO, including the namespace, PostgreSQL cluster, Keycloak Deployment, and operator resources. Externally provisioned Secrets may be controlled by your secret-management workflow and should be handled according to that ownership model. The operator itself (CRDs) must be removed separately.
 
 > **Note:** KRO must be installed on the cluster before the RGD is applied. See [KRO installation](https://kro.run/docs/getting-started/installation).
+
+To verify the KRO deployment path without waiting for a full Keycloak health check,
+run the materialization test against a cluster with KRO and CloudNativePG CRDs installed:
+
+```bash
+scripts/tests/test-kro-deployment.sh
+```
+
+The test applies the RGD, creates a minimal `KeycloakInstance`, waits for the
+KRO-managed Namespace, CNPG Cluster, Deployments, Service, ServiceAccounts, Role,
+RoleBinding, and PodDisruptionBudget, and fails if rendered resources still contain
+literal template delimiters such as `{{ ... }}`.
 
 ---
 

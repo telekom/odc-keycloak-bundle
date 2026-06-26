@@ -18,6 +18,7 @@ type AuthFlowSpec struct {
 	RealmRef string `json:"realmRef"`
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="alias is immutable after creation"
 	Alias       string `json:"alias"`
 	Description string `json:"description,omitempty"`
 	TopLevel    bool   `json:"topLevel,omitempty"`

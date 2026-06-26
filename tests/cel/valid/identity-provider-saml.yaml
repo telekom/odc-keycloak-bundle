@@ -1,0 +1,12 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: IdentityProvider
+metadata:
+  name: cel-test-saml-valid
+spec:
+  realmRef: master
+  alias: cel-test-saml-valid
+  type: saml
+  enabled: true
+  config:
+    singleSignOnServiceUrl: https://idp.example.com/saml/sso
+    nameIDPolicyFormat: urn:oasis:names:tc:SAML:2.0:nameid-format:persistent

@@ -1,0 +1,12 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: IdentityProvider
+metadata:
+  name: cel-test-oidc-empty-issuer
+spec:
+  realmRef: master
+  alias: cel-test-oidc-empty-issuer
+  type: oidc
+  enabled: true
+  config:
+    issuerUrl: ""
+    clientId: cel-test-client

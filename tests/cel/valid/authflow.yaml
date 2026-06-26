@@ -1,0 +1,9 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: AuthFlow
+metadata:
+  name: cel-test-authflow
+spec:
+  realmRef: master
+  alias: cel-test-authflow
+  description: CEL validation test AuthFlow
+  topLevel: true

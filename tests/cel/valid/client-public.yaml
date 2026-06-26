@@ -1,0 +1,11 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: Client
+metadata:
+  name: cel-test-public-client
+spec:
+  realmRef: master
+  clientId: cel-test-public-client
+  publicClient: true
+  standardFlowEnabled: true
+  redirectUris:
+    - https://app.example.com/*

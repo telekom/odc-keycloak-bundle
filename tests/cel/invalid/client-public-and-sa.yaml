@@ -1,0 +1,10 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: Client
+metadata:
+  name: cel-test-public-and-sa
+spec:
+  realmRef: master
+  clientId: cel-test-public-and-sa
+  publicClient: true
+  serviceAccountsEnabled: true
+  # publicClient and serviceAccountsEnabled are mutually exclusive in Keycloak

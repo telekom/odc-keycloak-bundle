@@ -297,7 +297,7 @@ spec:
     account: ["view-profile", "manage-account"]
   initialPassword:
     secretName: jane-doe-initial-password
-    secretKey: password     # default key name
+    secretKey: password     # default key name when omitted
 ```
 
 ### Spec Fields (User)
@@ -316,7 +316,7 @@ spec:
 | `realmRoles` | string[] | List of realm-level roles to assign. |
 | `clientRoles` | map[string]string[] | Map of client-id to roles to assign. |
 | `initialPassword.secretName` | string | Name of the secret containing the password. |
-| `initialPassword.secretKey` | string | Key within the secret. |
+| `initialPassword.secretKey` | string | Key within the secret. Defaults to `password` when omitted. |
 
 > [!TIP]
 > **Declarative Roles & Attributes:** Unlike groups, **roles** and **attributes** defined in the CRD are strictly reconciled. Manual additions or deletions in the Keycloak UI will be overwritten by the operator.

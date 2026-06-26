@@ -1,0 +1,9 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: Realm
+metadata:
+  name: cel-test-i18n-no-locales
+spec:
+  realmName: cel-test-i18n-no-locales
+  internationalizationEnabled: true
+  defaultLocale: en
+  # supportedLocales is absent — CEL rule requires it when internationalizationEnabled is true

@@ -273,6 +273,8 @@ func BuildRealmExport(ctx context.Context, c client.Client, namespace string, re
 						Value:     string(val),
 						Temporary: true,
 					})
+				} else {
+					return nil, fmt.Errorf("getting initial-password key %q in secret %q for user %q: key not found", key, secretName.Name, item.Spec.Username)
 				}
 			}
 			export.Users = append(export.Users, userEx)

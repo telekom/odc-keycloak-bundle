@@ -5,6 +5,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// +kubebuilder:validation:XValidation:rule="!(has(self.internationalizationEnabled) && self.internationalizationEnabled) || (has(self.supportedLocales) && size(self.supportedLocales) > 0)",message="supportedLocales must not be empty when internationalizationEnabled is true"
+// +kubebuilder:validation:XValidation:rule="!(has(self.internationalizationEnabled) && self.internationalizationEnabled) || (has(self.defaultLocale) && size(self.defaultLocale) > 0)",message="defaultLocale must be set when internationalizationEnabled is true"
 type RealmSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1

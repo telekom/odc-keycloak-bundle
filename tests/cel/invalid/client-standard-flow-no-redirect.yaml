@@ -1,0 +1,9 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: Client
+metadata:
+  name: cel-test-std-flow-no-redirect
+spec:
+  realmRef: master
+  clientId: cel-test-std-flow-no-redirect
+  standardFlowEnabled: true
+  # redirectUris is absent — CEL rule requires it when standardFlowEnabled is true

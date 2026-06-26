@@ -5,6 +5,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// +kubebuilder:validation:XValidation:rule="!(has(self.publicClient) && self.publicClient) || !(has(self.serviceAccountsEnabled) && self.serviceAccountsEnabled)",message="publicClient and serviceAccountsEnabled are mutually exclusive"
+// +kubebuilder:validation:XValidation:rule="!(has(self.standardFlowEnabled) && self.standardFlowEnabled) || (has(self.redirectUris) && size(self.redirectUris) > 0)",message="redirectUris must not be empty when standardFlowEnabled is true"
 type ClientSpec struct {
 	// RealmRef is the name of the target Realm CR. It is mandatory: an empty
 	// or missing realmRef is rejected by admission and must never silently fall

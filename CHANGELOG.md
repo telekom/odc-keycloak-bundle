@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.3.1]
+
+### Added
+
+- CEL admission validation coverage for Keycloak operator CRDs and the KRO RGD.
+- Automated KRO deployment-path verification for RGD acceptance and generated resource materialization.
+- Air-gapped OCM image coverage checks that fail CI when runtime manifests reference static images missing from the OCM component.
+
+### Fixed
+
+- KRO RGD dynamic values now use KRO CEL expressions instead of Go/Helm-style placeholders.
+- `initialPassword.secretKey` keeps its documented `password` default while missing Secret keys now fail reconciliation explicitly.
+- The BusyBox `wait-for-db` initContainer image is now part of the OCM component and security scan surface.
+
+---
+
 ## [0.3.0-final]
 
 ### Fixed

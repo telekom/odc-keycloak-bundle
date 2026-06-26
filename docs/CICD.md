@@ -23,7 +23,7 @@ the operator image package from the repository role. Non-dev repositories publis
 `${OCM_REGISTRY}/keycloak-operator` on `main`. Repositories whose name ends in `-dev`
 always publish `${OCM_REGISTRY}/keycloak-operator-dev`, even on `main`, so private
 development repositories cannot overwrite the release operator package. On release
-publishes, the operator image is also tagged as `0.3.0` and `latest` for chart/RGD
+publishes, the operator image is also tagged as `0.3.1` and `latest` for chart/RGD
 defaults and human inspection.
 CI also injects `SOURCE_REPO_URL`, `SOURCE_REF`, and `SOURCE_COMMIT`; the source ref stays
 a valid Git ref while the commit field records the exact delivered revision.
@@ -135,7 +135,7 @@ For non-manual GitHub Actions runs, backup verification always uses `incluster-m
 Repository naming controls release safety:
 
 - `*-dev` repositories publish operator images only to `${OCM_REGISTRY}/keycloak-operator-dev`.
-- Non-dev repositories on `main` publish `${OCM_REGISTRY}/keycloak-operator`, including `0.3.0` and `latest`.
+- Non-dev repositories on `main` publish `${OCM_REGISTRY}/keycloak-operator`, including `0.3.1` and `latest`.
 - OCM transfer runs only from non-dev repositories on `main`, and not from `workflow_dispatch` runs with `checkout_ref`.
 
 Optional repository variable:

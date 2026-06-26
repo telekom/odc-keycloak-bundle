@@ -84,10 +84,14 @@ spec:
                   secretKey:
                     type: string
                   secretName:
+                    minLength: 1
                     type: string
                 required:
                 - secretName
                 type: object
+                x-kubernetes-validations:
+                - message: initialPassword.secretName must not be empty
+                  rule: size(self.secretName) > 0
               lastName:
                 type: string
               realmRef:

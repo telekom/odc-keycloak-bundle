@@ -1,5 +1,5 @@
 name: opendefense.cloud/keycloak-bundle
-version: 0.3.0
+version: 0.3.1
 provider:
   name: opendefensecloud
 labels:
@@ -21,6 +21,15 @@ resources:
     access:
       type: ociArtifact
       imageReference: quay.io/keycloak/keycloak:26.6.3@sha256:5fdbf2dbb5897cc34e82de49d13e23db011f9925089dbc555fc095f2c8bc1dac
+
+  # BusyBox image used by the Keycloak wait-for-db initContainer
+  - name: busybox-image
+    type: ociImage
+    version: "1.37"
+    relation: external
+    access:
+      type: ociArtifact
+      imageReference: busybox:1.37@sha256:1487d0af5f52b4ba31c7e465126ee2123fe3f2305d638e7827681e7cf6c83d5e
 
   # PostgreSQL image
   - name: postgres-image
@@ -61,7 +70,7 @@ resources:
   # Keycloak Operator image
   - name: keycloak-operator-image
     type: ociImage
-    version: 0.3.0
+    version: 0.3.1
     relation: local
     access:
       type: ociArtifact
@@ -70,7 +79,7 @@ resources:
   # Realm CRD
   - name: realm-crd
     type: kubernetes
-    version: 0.3.0
+    version: 0.3.1
     relation: local
     input:
       type: file
@@ -80,7 +89,7 @@ resources:
   # Client CRD
   - name: client-crd
     type: kubernetes
-    version: 0.3.0
+    version: 0.3.1
     relation: local
     input:
       type: file
@@ -90,7 +99,7 @@ resources:
   # User CRD
   - name: user-crd
     type: kubernetes
-    version: 0.3.0
+    version: 0.3.1
     relation: local
     input:
       type: file
@@ -100,7 +109,7 @@ resources:
   # Group CRD
   - name: group-crd
     type: kubernetes
-    version: 0.3.0
+    version: 0.3.1
     relation: local
     input:
       type: file
@@ -110,7 +119,7 @@ resources:
   # ClientScope CRD
   - name: clientscope-crd
     type: kubernetes
-    version: 0.3.0
+    version: 0.3.1
     relation: local
     input:
       type: file
@@ -120,7 +129,7 @@ resources:
   # AuthFlow CRD
   - name: authflow-crd
     type: kubernetes
-    version: 0.3.0
+    version: 0.3.1
     relation: local
     input:
       type: file
@@ -130,7 +139,7 @@ resources:
   # IdentityProvider CRD
   - name: identityprovider-crd
     type: kubernetes
-    version: 0.3.0
+    version: 0.3.1
     relation: local
     input:
       type: file
@@ -140,7 +149,7 @@ resources:
   # KRO ResourceGraphDefinition
   - name: keycloak-instance-rgd
     type: blueprint
-    version: 0.3.0
+    version: 0.3.1
     relation: local
     input:
       type: file
@@ -150,7 +159,7 @@ resources:
   # Keycloak Operator Helm chart
   - name: keycloak-operator
     type: helmChart
-    version: 0.3.0
+    version: 0.3.1
     relation: local
     input:
       type: helm
@@ -159,7 +168,7 @@ resources:
   # CycloneDX SBOM for offline supply-chain and vulnerability analysis
   - name: keycloak-bundle-sbom
     type: sbom
-    version: 0.3.0
+    version: 0.3.1
     relation: local
     input:
       type: file
@@ -169,7 +178,7 @@ resources:
   # Manifests
   - name: manifests
     type: directory
-    version: 0.3.0
+    version: 0.3.1
     relation: local
     input:
       type: file
@@ -179,7 +188,7 @@ resources:
 sources:
   - name: source
     type: git
-    version: 0.3.0
+    version: 0.3.1
     access:
       type: git
       repoUrl: ${SOURCE_REPO_URL}

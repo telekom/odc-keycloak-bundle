@@ -1,0 +1,9 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: AuthFlow
+metadata:
+  name: cel-test-authflow
+spec:
+  realmRef: master
+  alias: cel-test-authflow-renamed
+  description: Attempts to rename the alias — must be rejected on update
+  topLevel: true

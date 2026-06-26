@@ -58,6 +58,9 @@ spec:
               alias:
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: alias is immutable after creation
+                  rule: self == oldSelf
               description:
                 type: string
               realmRef:

@@ -215,6 +215,7 @@ Component structure:
 ```text
 component-constructor.yaml
 |-- keycloak-image (ociImage)
+|-- busybox-image (ociImage)
 |-- postgres-image (ociImage)
 |-- cnpg-operator-image (ociImage)
 |-- prometheus-operator-image (ociImage)

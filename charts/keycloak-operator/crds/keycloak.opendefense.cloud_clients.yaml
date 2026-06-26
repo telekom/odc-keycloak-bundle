@@ -98,6 +98,14 @@ spec:
             - clientId
             - realmRef
             type: object
+            x-kubernetes-validations:
+            - message: publicClient and serviceAccountsEnabled are mutually exclusive
+              rule: '!(has(self.publicClient) && self.publicClient) || !(has(self.serviceAccountsEnabled)
+                && self.serviceAccountsEnabled)'
+            - message: redirectUris must not be empty when standardFlowEnabled is
+                true
+              rule: '!(has(self.standardFlowEnabled) && self.standardFlowEnabled)
+                || (has(self.redirectUris) && size(self.redirectUris) > 0)'
           status:
             properties:
               conditions:

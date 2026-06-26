@@ -125,7 +125,7 @@ func TestBuildRealmExport_UserWithInitialPassword_DefaultKey(t *testing.T) {
 			Username: "alice",
 			InitialPassword: &v1alpha1.InitialPasswordRef{
 				SecretName: "alice-pw",
-				SecretKey:  "", // empty → defaults to "password"
+				SecretKey:  "", // empty defaults to "password"
 			},
 		},
 	}
@@ -140,6 +140,32 @@ func TestBuildRealmExport_UserWithInitialPassword_DefaultKey(t *testing.T) {
 	creds := export.Users[0].Credentials
 	if len(creds) != 1 || creds[0].Value != "mypassword" {
 		t.Fatalf("expected credential with value 'mypassword', got: %+v", creds)
+	}
+}
+
+func TestBuildRealmExport_UserWithInitialPassword_MissingSecretKey(t *testing.T) {
+	s := testScheme(t)
+	pwSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice-pw", Namespace: "test-ns"},
+		Data:       map[string][]byte{"other": []byte("mypassword")},
+	}
+	user := &v1alpha1.User{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice", Namespace: "test-ns"},
+		Spec: v1alpha1.UserSpec{
+			RealmRef: "r",
+			Username: "alice",
+			InitialPassword: &v1alpha1.InitialPasswordRef{
+				SecretName: "alice-pw",
+			},
+		},
+	}
+	fc := fake.NewClientBuilder().WithScheme(s).WithObjects(pwSecret, user).Build()
+	export, err := BuildRealmExport(context.Background(), fc, "test-ns", testRealm("r"))
+	if err == nil {
+		t.Fatal("expected error for missing default password key, got nil")
+	}
+	if export != nil {
+		t.Fatalf("expected nil export on error, got %+v", export)
 	}
 }
 

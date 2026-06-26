@@ -1,0 +1,10 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: IdentityProvider
+metadata:
+  name: cel-test-oidc-no-config
+spec:
+  realmRef: master
+  alias: cel-test-oidc-no-config
+  type: oidc
+  enabled: true
+  # config is absent — CEL rule requires issuerUrl or authorizationUrl for oidc

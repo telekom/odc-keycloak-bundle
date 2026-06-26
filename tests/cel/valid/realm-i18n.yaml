@@ -1,0 +1,11 @@
+apiVersion: keycloak.opendefense.cloud/v1alpha1
+kind: Realm
+metadata:
+  name: cel-test-i18n-valid
+spec:
+  realmName: cel-test-i18n-valid
+  internationalizationEnabled: true
+  supportedLocales:
+    - en
+    - de
+  defaultLocale: en

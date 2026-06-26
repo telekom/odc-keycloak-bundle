@@ -20,7 +20,8 @@ env:
   CNPG_OPERATOR_IMAGE: ghcr.io/cloudnative-pg/cloudnative-pg:1.29.1@sha256:0dfff19ba7b52ca25851a1010028b6940fff2e233290465af1cfb08a5f3f4661
   PROMETHEUS_OPERATOR_IMAGE: quay.io/prometheus-operator/prometheus-operator:v0.91.0@sha256:9e53e13139218aca79ee000172de73355e9174ef2904585bfad9497fc71aae2d
   CONFIG_CLI_IMAGE: quay.io/adorsys/keycloak-config-cli:latest-26@sha256:1b22dfaa9ae0c71f74b0342f9221a6510f272da5def683dbba26a98e6b1b1411
-  OPERATOR_IMAGE: ${{ vars.OCM_REGISTRY || secrets.OCM_REGISTRY || format('ghcr.io/{0}', github.repository_owner) }}/keycloak-operator:0.3.0 # yamllint disable-line rule:line-length
+  BUSYBOX_IMAGE: busybox:1.37@sha256:1487d0af5f52b4ba31c7e465126ee2123fe3f2305d638e7827681e7cf6c83d5e
+  OPERATOR_IMAGE: ${{ vars.OCM_REGISTRY || secrets.OCM_REGISTRY || format('ghcr.io/{0}', github.repository_owner) }}/keycloak-operator:0.3.1 # yamllint disable-line rule:line-length
 
 jobs:
   trivy:
@@ -126,6 +127,17 @@ jobs:
         with:
           scan-type: image
           image-ref: ${{ env.CONFIG_CLI_IMAGE }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+
+      - name: Scan BusyBox init image for CVEs
+        if: success() || failure()
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.BUSYBOX_IMAGE }}
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true

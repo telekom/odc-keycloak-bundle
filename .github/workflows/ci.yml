@@ -94,7 +94,7 @@ permissions:
 env:
   INSTANCE_NAME: "cicd"
   NAMESPACE: "keycloak-cicd"
-  RELEASE_VERSION: "0.3.0"
+  RELEASE_VERSION: "0.3.1"
   OCM_REGISTRY: ${{ vars.OCM_REGISTRY || secrets.OCM_REGISTRY || format('ghcr.io/{0}', github.repository_owner) }}
   OPERATOR_IMAGE: "${{ vars.OCM_REGISTRY || secrets.OCM_REGISTRY || format('ghcr.io/{0}', github.repository_owner) }}/${{ github.ref == 'refs/heads/main' && !endsWith(github.event.repository.name, '-dev') && (github.event_name != 'workflow_dispatch' || inputs.checkout_ref == '') && 'keycloak-operator' || 'keycloak-operator-dev' }}" # yamllint disable-line rule:line-length
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -156,6 +156,7 @@ jobs:
             charts/keycloak-operator/values.yaml
             examples/
             scripts/tests/fixtures/
+            tests/cel/
           config_data: |
             extends: default
             rules:
@@ -208,6 +209,12 @@ jobs:
           chmod +x scripts/tests/test-security.sh
           ./scripts/tests/test-security.sh
 
+      - name: Air-gapped OCM Image Coverage
+        id: airgap_ocm_images
+        run: |
+          chmod +x scripts/tests/test-airgapped-ocm-images.sh
+          ./scripts/tests/test-airgapped-ocm-images.sh
+
       - name: Add Job Summary
         if: always()
         run: |
@@ -220,6 +227,58 @@ jobs:
           echo "| shfmt | ${{ steps.shfmt.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Gitleaks | ${{ steps.gitleaks.outcome }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Non-root Security Check | ${{ steps.security_check.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Air-gapped OCM Image Coverage | ${{ steps.airgap_ocm_images.outcome }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ── 2a. CEL Validation Tests ─────────────────────────────────────────
+  cel-validation:
+    name: "2a. CEL Validation Tests"
+    runs-on: ubuntu-latest
+    needs: lint
+    if: ${{ always() && (needs.lint.result == 'success' || needs.lint.result == 'skipped') }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.checkout_ref || github.ref }}
+
+      - name: Install kind
+        run: |
+          # renovate: datasource=github-releases depName=kubernetes-sigs/kind
+          KIND_VERSION="v0.29.0"
+          curl -sSfLo kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x kind && sudo mv kind /usr/local/bin/kind
+
+      - name: Create kind cluster
+        run: kind create cluster --wait 60s
+
+      - name: Apply Keycloak CRDs
+        run: |
+          kubectl apply -f charts/keycloak-operator/crds/
+          for crd in \
+            realms.keycloak.opendefense.cloud \
+            clients.keycloak.opendefense.cloud \
+            identityproviders.keycloak.opendefense.cloud \
+            authflows.keycloak.opendefense.cloud \
+            users.keycloak.opendefense.cloud; do
+            kubectl wait --for=condition=Established "crd/${crd}" --timeout=30s
+          done
+
+      - name: Run CEL validation tests
+        run: |
+          chmod +x scripts/tests/test-cel-validation.sh
+          scripts/tests/test-cel-validation.sh
+
+      - name: Add Job Summary
+        if: always()
+        run: |
+          # The test script writes the per-test results table directly to GITHUB_STEP_SUMMARY.
+          # This step is a fallback for the case where the test script did not reach its
+          # summary section (e.g., cluster creation or CRD apply failed).
+          if ! grep -q "### CEL Validation Tests" "$GITHUB_STEP_SUMMARY" 2>/dev/null; then
+            echo "### CEL Validation Tests" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Tests did not run — cluster setup or CRD apply step failed." >> "$GITHUB_STEP_SUMMARY"
+            echo "Check the step logs above for details." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   # ── 2. Build Operator Image ──────────────────────────────────────────
   build-operator:

@@ -147,6 +147,16 @@ spec:
             - realmRef
             - type
             type: object
+            x-kubernetes-validations:
+            - message: config must contain non-empty issuerUrl or authorizationUrl
+                for OIDC identity providers
+              rule: self.type != 'oidc' || (has(self.config) && (('issuerUrl' in self.config
+                && size(self.config['issuerUrl']) > 0) || ('authorizationUrl' in self.config
+                && size(self.config['authorizationUrl']) > 0)))
+            - message: config.singleSignOnServiceUrl is required for SAML identity
+                providers
+              rule: self.type != 'saml' || (has(self.config) && 'singleSignOnServiceUrl'
+                in self.config && size(self.config['singleSignOnServiceUrl']) > 0)
           status:
             description: IdentityProviderStatus defines the observed state of IdentityProvider
             properties:

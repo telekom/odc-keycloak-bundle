@@ -97,6 +97,15 @@ spec:
             required:
             - realmName
             type: object
+            x-kubernetes-validations:
+            - message: supportedLocales must not be empty when internationalizationEnabled
+                is true
+              rule: '!(has(self.internationalizationEnabled) && self.internationalizationEnabled)
+                || (has(self.supportedLocales) && size(self.supportedLocales) > 0)'
+            - message: defaultLocale must be set when internationalizationEnabled
+                is true
+              rule: '!(has(self.internationalizationEnabled) && self.internationalizationEnabled)
+                || (has(self.defaultLocale) && size(self.defaultLocale) > 0)'
           status:
             properties:
               activeJobName:

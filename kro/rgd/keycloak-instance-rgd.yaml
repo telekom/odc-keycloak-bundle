@@ -11,6 +11,16 @@ spec:
       type: object
       required:
         - namespace
+      x-kubernetes-validations:
+        - rule: "self.dbInstances == 1 || self.dbInstances % 2 == 1"
+          message: "dbInstances must be 1 or odd (3, 5, ...) for CNPG quorum"
+        - rule: >-
+            self.hostname == '' ||
+            self.hostname.matches('^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)*$')
+          message: "hostname must be a valid lowercase DNS hostname when set"
+        - rule: >-
+            self.dbStorageSize.matches('^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E|m)?$')
+          message: "dbStorageSize must be a valid Kubernetes Quantity (e.g. 5Gi)"
       properties:
         namespace:
           type: string
@@ -29,7 +39,7 @@ spec:
           default: "5Gi"
         operatorImage:
           type: string
-          default: "ghcr.io/opendefensecloud/keycloak-operator:0.3.0"
+          default: "ghcr.io/opendefensecloud/keycloak-operator:0.3.1"
           description: "Keycloak operator image; override with mirrored digest-pinned image for air-gapped releases"
         configCliImage:
           type: string
@@ -71,26 +81,26 @@ spec:
         apiVersion: v1
         kind: Namespace
         metadata:
-          name: "{{ .spec.namespace }}"
+          name: ${schema.spec.namespace}
           labels:
             app.kubernetes.io/name: keycloak
-            app.kubernetes.io/instance: "{{ .metadata.name }}"
+            app.kubernetes.io/instance: ${schema.metadata.name}
             app.kubernetes.io/managed-by: kro
 
     # 2. CloudNativePG Cluster
-    - id: postgres-cluster
+    - id: postgresCluster
       template:
         apiVersion: postgresql.cnpg.io/v1
         kind: Cluster
         metadata:
           name: keycloak-db
-          namespace: "{{ .spec.namespace }}"
+          namespace: ${schema.spec.namespace}
         spec:
           # renovate: datasource=docker
           imageName: ghcr.io/cloudnative-pg/postgresql:18.4@sha256:1a8ef3dc0dc214c1764660291b29a98288b13753c09e9981b86eaf0c75de8bdc
-          instances: "{{ .spec.dbInstances }}"
+          instances: ${schema.spec.dbInstances}
           storage:
-            size: "{{ .spec.dbStorageSize }}"
+            size: ${schema.spec.dbStorageSize}
           bootstrap:
             initdb:
               database: keycloak
@@ -110,17 +120,17 @@ spec:
         - namespace
 
     # 3. Keycloak Deployment (Official Keycloak from Quay.io)
-    - id: keycloak-deployment
+    - id: keycloakDeployment
       template:
         apiVersion: apps/v1
         kind: Deployment
         metadata:
           name: keycloak
-          namespace: "{{ .spec.namespace }}"
+          namespace: ${schema.spec.namespace}
           labels:
             app: keycloak
         spec:
-          replicas: "{{ .spec.replicas }}"
+          replicas: ${schema.spec.replicas}
           strategy:
             type: RollingUpdate
             rollingUpdate:
@@ -188,13 +198,13 @@ spec:
                     - name: KC_BOOTSTRAP_ADMIN_USERNAME
                       valueFrom:
                         secretKeyRef:
-                          name: "{{ .spec.adminSecretName }}"
-                          key: "{{ .spec.adminUserSecretKey }}"
+                          name: ${schema.spec.adminSecretName}
+                          key: ${schema.spec.adminUserSecretKey}
                     - name: KC_BOOTSTRAP_ADMIN_PASSWORD
                       valueFrom:
                         secretKeyRef:
-                          name: "{{ .spec.adminSecretName }}"
-                          key: "{{ .spec.adminPasswordSecretKey }}"
+                          name: ${schema.spec.adminSecretName}
+                          key: ${schema.spec.adminPasswordSecretKey}
                   resources:
                     requests:
                       memory: "512Mi"
@@ -215,16 +225,16 @@ spec:
                     initialDelaySeconds: 90
                     periodSeconds: 10
       dependsOn:
-        - postgres-cluster
+        - postgresCluster
 
     # 5. Keycloak Service
-    - id: keycloak-service
+    - id: keycloakService
       template:
         apiVersion: v1
         kind: Service
         metadata:
           name: keycloak
-          namespace: "{{ .spec.namespace }}"
+          namespace: ${schema.spec.namespace}
         spec:
           type: ClusterIP
           ports:
@@ -240,16 +250,16 @@ spec:
           selector:
             app: keycloak
       dependsOn:
-        - keycloak-deployment
+        - keycloakDeployment
 
     # 9. Keycloak PodDisruptionBudget
-    - id: keycloak-pdb
+    - id: keycloakPdb
       template:
         apiVersion: policy/v1
         kind: PodDisruptionBudget
         metadata:
           name: keycloak
-          namespace: "{{ .spec.namespace }}"
+          namespace: ${schema.spec.namespace}
           labels:
             app: keycloak
             app.kubernetes.io/managed-by: kro
@@ -259,19 +269,19 @@ spec:
             matchLabels:
               app: keycloak
       dependsOn:
-        - keycloak-deployment
+        - keycloakDeployment
 
     # 10. Operator ServiceAccount
-    - id: operator-serviceaccount
+    - id: operatorServiceAccount
       template:
         apiVersion: v1
         kind: ServiceAccount
         metadata:
           name: keycloak-operator
-          namespace: "{{ .spec.namespace }}"
+          namespace: ${schema.spec.namespace}
           labels:
             app.kubernetes.io/name: keycloak-operator
-            app.kubernetes.io/instance: "{{ .metadata.name }}"
+            app.kubernetes.io/instance: ${schema.metadata.name}
             app.kubernetes.io/managed-by: kro
       dependsOn:
         - namespace
@@ -279,32 +289,32 @@ spec:
     # 10b. Config-CLI ServiceAccount
     # config-cli Job pods only call Keycloak's HTTP API and need no Kubernetes API
     # access, so token automounting is disabled (least privilege / airgap hardening).
-    - id: config-cli-serviceaccount
+    - id: configCliServiceAccount
       template:
         apiVersion: v1
         kind: ServiceAccount
         metadata:
           name: keycloak-config-cli
-          namespace: "{{ .spec.namespace }}"
+          namespace: ${schema.spec.namespace}
           labels:
             app.kubernetes.io/name: keycloak-config-cli
-            app.kubernetes.io/instance: "{{ .metadata.name }}"
+            app.kubernetes.io/instance: ${schema.metadata.name}
             app.kubernetes.io/managed-by: kro
         automountServiceAccountToken: false
       dependsOn:
         - namespace
 
     # 11. Operator Role (namespace-scoped: one per instance)
-    - id: operator-role
+    - id: operatorRole
       template:
         apiVersion: rbac.authorization.k8s.io/v1
         kind: Role
         metadata:
           name: keycloak-operator
-          namespace: "{{ .spec.namespace }}"
+          namespace: ${schema.spec.namespace}
           labels:
             app.kubernetes.io/name: keycloak-operator
-            app.kubernetes.io/instance: "{{ .metadata.name }}"
+            app.kubernetes.io/instance: ${schema.metadata.name}
             app.kubernetes.io/managed-by: kro
         rules:
           - apiGroups: ["keycloak.opendefense.cloud"]
@@ -363,16 +373,16 @@ spec:
         - namespace
 
     # 12. Operator RoleBinding
-    - id: operator-rolebinding
+    - id: operatorRoleBinding
       template:
         apiVersion: rbac.authorization.k8s.io/v1
         kind: RoleBinding
         metadata:
           name: keycloak-operator
-          namespace: "{{ .spec.namespace }}"
+          namespace: ${schema.spec.namespace}
           labels:
             app.kubernetes.io/name: keycloak-operator
-            app.kubernetes.io/instance: "{{ .metadata.name }}"
+            app.kubernetes.io/instance: ${schema.metadata.name}
             app.kubernetes.io/managed-by: kro
         roleRef:
           apiGroup: rbac.authorization.k8s.io
@@ -381,40 +391,40 @@ spec:
         subjects:
           - kind: ServiceAccount
             name: keycloak-operator
-            namespace: "{{ .spec.namespace }}"
+            namespace: ${schema.spec.namespace}
       dependsOn:
-        - operator-serviceaccount
-        - operator-role
+        - operatorServiceAccount
+        - operatorRole
 
     # 13. Operator Deployment
-    - id: operator-deployment
+    - id: operatorDeployment
       template:
         apiVersion: apps/v1
         kind: Deployment
         metadata:
           name: keycloak-operator
-          namespace: "{{ .spec.namespace }}"
+          namespace: ${schema.spec.namespace}
           labels:
             app: keycloak-operator
             app.kubernetes.io/name: keycloak-operator
-            app.kubernetes.io/instance: "{{ .metadata.name }}"
+            app.kubernetes.io/instance: ${schema.metadata.name}
             app.kubernetes.io/managed-by: kro
         spec:
           replicas: 2
           selector:
             matchLabels:
               app: keycloak-operator
-              app.kubernetes.io/instance: "{{ .metadata.name }}"
+              app.kubernetes.io/instance: ${schema.metadata.name}
           template:
             metadata:
               labels:
                 app: keycloak-operator
-                app.kubernetes.io/instance: "{{ .metadata.name }}"
+                app.kubernetes.io/instance: ${schema.metadata.name}
             spec:
               serviceAccountName: keycloak-operator
               containers:
                 - name: operator
-                  image: "{{ .spec.operatorImage }}"
+                  image: ${schema.spec.operatorImage}
                   imagePullPolicy: IfNotPresent
                   env:
                     - name: METRICS_BIND_ADDRESS
@@ -424,12 +434,12 @@ spec:
                     - name: KEYCLOAK_USER
                       valueFrom:
                         secretKeyRef:
-                          name: "{{ .spec.adminSecretName }}"
-                          key: "{{ .spec.adminUserSecretKey }}"
+                          name: ${schema.spec.adminSecretName}
+                          key: ${schema.spec.adminUserSecretKey}
                     - name: KEYCLOAK_ADMIN_SECRET_NAME
-                      value: "{{ .spec.adminSecretName }}"
+                      value: ${schema.spec.adminSecretName}
                     - name: KEYCLOAK_ADMIN_SECRET_KEY
-                      value: "{{ .spec.adminPasswordSecretKey }}"
+                      value: ${schema.spec.adminPasswordSecretKey}
                     - name: POD_NAME
                       valueFrom:
                         fieldRef:
@@ -444,7 +454,7 @@ spec:
                     # "config-cli image not configured". Digest-pinned for airgapped
                     # supply-chain integrity (matches component-constructor.yaml).
                     - name: CONFIG_CLI_IMAGE
-                      value: "{{ .spec.configCliImage }}"
+                      value: ${schema.spec.configCliImage}
                     # Dedicated ServiceAccount for config-cli Job pods (no K8s API access).
                     - name: CONFIG_CLI_SA_NAME
                       value: "keycloak-config-cli"
@@ -456,13 +466,11 @@ spec:
                       cpu: 500m
                       memory: 128Mi
       dependsOn:
-        - operator-rolebinding
-        - config-cli-serviceaccount
+        - operatorRoleBinding
+        - configCliServiceAccount
 
   # Status aggregation
   status:
-    ready:
-      allOf:
-        - ".status.keycloak-deployment.status.readyReplicas >= 1"
-    namespace: "{{ .spec.namespace }}"
-    keycloakUrl: "http://keycloak.{{ .spec.namespace }}.svc:8080"
+    ready: ${keycloakDeployment.status.?readyReplicas.orValue(0) >= 1}
+    namespace: ${schema.spec.namespace}
+    keycloakUrl: "http://keycloak.${schema.spec.namespace}.svc:8080"

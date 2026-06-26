@@ -46,7 +46,7 @@ any `operator.adminSecret.*` override.
 | `replicaCount` | `2` | Number of operator replicas. |
 | `image.repository` | `ghcr.io/opendefensecloud/keycloak-operator` | Operator container image repository. |
 | `image.pullPolicy` | `IfNotPresent` | Image pull policy. |
-| `image.tag` | `"0.3.0"` | Image tag. Defaults to chart `appVersion` if omitted. |
+| `image.tag` | `"0.3.1"` | Image tag. Defaults to chart `appVersion` if omitted. |
 | `imagePullSecrets` | `[]` | List of image pull secret names to inject into the operator pod. These are also propagated to config-cli Job pods automatically. |
 | `nameOverride` | `""` | Override the chart name portion of generated resource names. |
 | `fullnameOverride` | `""` | Override the full name of generated resources. |

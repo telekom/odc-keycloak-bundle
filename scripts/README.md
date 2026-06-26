@@ -66,7 +66,9 @@ Before running these scripts, ensure you have:
 | `tests/test-crd-lifecycle.sh` | ✅ | ✅ | **Verification (Lifecycle)**: Deletion propagation checks for IdentityProvider/AuthFlow. |
 | `tests/test-crd-suite.sh` | ✅ | ✅ | **Verification (Full)**: Runs smoke and lifecycle suites in sequence. |
 | `tests/test-crd.sh` | ✅ | ✅ | Backward-compatible wrapper for `tests/test-crd-suite.sh full`. |
+| `tests/test-kro-deployment.sh` | ✅ | conditional | Verifies the KRO path by applying the RGD, creating a minimal `KeycloakInstance`, and checking generated resources. Requires KRO and CloudNativePG CRDs on the target cluster. |
 | `tests/test-observability.sh` | ✅ | ✅ | Verifies ServiceMonitor, PodMonitor, OTEL tracing (Jaeger spans), and PrometheusRule alert definitions. |
+| `tests/test-airgapped-ocm-images.sh` | ✅ | ✅ | Verifies that productive static runtime image references are covered by OCM `ociImage` resources for air-gapped deployments. |
 | `tests/test-backup-restore.sh` | ✅ | ✅ | CNPG-native backup + restore checks. CI deploy stage executes the live smoke flow when backup secrets are configured. |
 | `tests/setup-backup-provider.sh` | ✅ | ✅ | CI helper for backup provider setup (`external-s3` or `incluster-minio`), credential secret provisioning, and secret-read RBAC for the CNPG service account. |
 

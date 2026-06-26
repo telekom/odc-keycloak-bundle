@@ -43,7 +43,7 @@ PROJECT_ROOT="$(cd "$(dirname "$(dirname "$SCRIPT_DIR")")" && pwd)"
 OUTPUT_DIR="${1:-$PROJECT_ROOT/ocm-output}"
 SBOM_FILE="$PROJECT_ROOT/ocm-sbom.cdx.json"
 # Component name and version are defined in component-constructor.yaml
-OPERATOR_IMAGE_REF="${OPERATOR_IMAGE_REF:-ghcr.io/opendefensecloud/keycloak-operator:0.3.0}"
+OPERATOR_IMAGE_REF="${OPERATOR_IMAGE_REF:-ghcr.io/opendefensecloud/keycloak-operator:0.3.1}"
 SOURCE_REPO_URL="${SOURCE_REPO_URL:-https://github.com/opendefensecloud/keycloak-bundle.git}"
 SOURCE_REF="${SOURCE_REF:-${GITHUB_REF:-refs/heads/main}}"
 SOURCE_COMMIT="${SOURCE_COMMIT:-${GITHUB_SHA:-}}"
@@ -80,10 +80,27 @@ info "Creating manifests.tar (workaround for Windows)..."
 tar -cf manifests.tar -C manifests . || fail "Failed to create manifests.tar" 8
 
 info "Generating CycloneDX SBOM..."
+SBOM_SCAN_ROOT="$PROJECT_ROOT"
+SBOM_OUTPUT_FILE="$SBOM_FILE"
+SYFT_CACHE_DIR="${SYFT_CACHE_DIR:-$PROJECT_ROOT/.syft-cache}"
+export SYFT_CACHE_DIR
+if command -v cygpath &>/dev/null; then
+    SBOM_SCAN_ROOT="$(cygpath -w "$PROJECT_ROOT")"
+    SBOM_OUTPUT_FILE="$(cygpath -w "$SBOM_FILE")"
+    SYFT_CACHE_DIR="$(cygpath -w "$SYFT_CACHE_DIR")"
+    export SYFT_CACHE_DIR
+fi
 if command -v syft &>/dev/null; then
-    syft "dir:$PROJECT_ROOT" -o "cyclonedx-json=$SBOM_FILE" || fail "Failed to generate SBOM with syft" 10
+    syft scan "dir:$SBOM_SCAN_ROOT" \
+        --exclude "**/.git/**" \
+        --exclude "**/.bin/**" \
+        --exclude "**/.syft-cache/**" \
+        --exclude "**/ocm-output/**" \
+        --exclude "**/ocm-output-*/**" \
+        --exclude "**/operator/bin/**" \
+        -o cyclonedx-json >"$SBOM_OUTPUT_FILE" || fail "Failed to generate SBOM with syft" 10
 elif command -v trivy &>/dev/null; then
-    trivy fs --quiet --format cyclonedx --output "$SBOM_FILE" "$PROJECT_ROOT" || fail "Failed to generate SBOM with trivy" 10
+    trivy fs --quiet --format cyclonedx --output "$SBOM_OUTPUT_FILE" "$SBOM_SCAN_ROOT" || fail "Failed to generate SBOM with trivy" 10
 else
     fail "SBOM generator not found. Install syft or trivy before running ocm-create.sh" 10
 fi

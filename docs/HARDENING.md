@@ -85,7 +85,7 @@ ObjectStore, recovery Cluster) without a custom Keycloak backup controller.
 
 | Control | Status | Implementation |
 |---------|--------|----------------|
-| Use specific image tags and digests | ✅ Applied | OCM image resources are digest-pinned for Keycloak `26.6.3`, PostgreSQL `18.4`, CNPG `1.29.1`, Prometheus Operator `0.91.0`, and `keycloak-config-cli`; the operator image is recorded as `keycloak-operator-image` using the immutable `OPERATOR_IMAGE_REF` supplied by CI or release tooling. |
+| Use specific image tags and digests | ✅ Applied | OCM image resources are digest-pinned for Keycloak `26.6.3`, BusyBox `1.37`, PostgreSQL `18.4`, CNPG `1.29.1`, Prometheus Operator `0.91.0`, and `keycloak-config-cli`; the operator image is recorded as `keycloak-operator-image` using the immutable `OPERATOR_IMAGE_REF` supplied by CI or release tooling. |
 | CVE scanning | ✅ Applied | `.github/workflows/security.yml` runs Trivy and blocks HIGH/CRITICAL image findings for the same image versions recorded in the component descriptor. |
 | Image provenance | ✅ Applied | OCM component archive is signed (`ocm-sign.sh`) and signature is validated before deployment (`ocm-validate.sh`/`ocm-verify.sh`) |
 | Operator image non-root | ✅ Applied | Operator `Dockerfile` uses a non-root `distroless` base; runtime `securityContext` enforces non-root execution |

@@ -32,7 +32,9 @@ type UserSpec struct {
 	InitialPassword *InitialPasswordRef `json:"initialPassword,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="size(self.secretName) > 0",message="initialPassword.secretName must not be empty"
 type InitialPasswordRef struct {
+	// +kubebuilder:validation:MinLength=1
 	SecretName string `json:"secretName"`
 	SecretKey  string `json:"secretKey,omitempty"`
 }
